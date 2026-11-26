@@ -1,0 +1,133 @@
+.portal {
+  min-height: 580px;
+  padding: clamp(56px, 9vw, 112px) 0;
+  background:
+    radial-gradient(ellipse at 82% 18%, rgba(155, 123, 255, 0.18), transparent 34%),
+    var(--tint);
+}
+
+.portal__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 460px);
+  align-items: center;
+  gap: clamp(40px, 8vw, 112px);
+}
+
+.portal__intro {
+  max-width: 560px;
+}
+
+.portal__eyebrow {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: var(--violet);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.portal__intro h1 {
+  max-width: 540px;
+  margin-bottom: 20px;
+  font-size: clamp(42px, 6vw, 68px);
+  line-height: 1.03;
+  letter-spacing: -0.035em;
+}
+
+.portal__intro p {
+  max-width: 460px;
+  color: var(--muted);
+  font-size: 19px;
+}
+
+.portal__back {
+  display: inline-block;
+  margin-top: 32px;
+  color: var(--violet);
+  font-weight: 700;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.portal-card {
+  padding: clamp(26px, 5vw, 40px);
+  border: 1px solid var(--line-soft);
+  border-radius: 28px;
+  background: var(--white);
+  box-shadow: 0 24px 70px rgba(42, 20, 102, 0.1);
+}
+
+.portal-card__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.portal-card h2 {
+  margin-bottom: 8px;
+  font-size: 32px;
+  letter-spacing: -0.025em;
+}
+
+.portal-card__copy {
+  margin-bottom: 28px;
+  color: var(--muted);
+}
+
+.portal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.portal-form > .field {
+  flex: none;
+}
+
+.portal-form .btn {
+  width: 100%;
+}
+
+.portal-form__message {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--tint);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.portal-card__note {
+  margin-top: 24px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.portal-card__note a {
+  color: var(--violet);
+  font-weight: 700;
+}
+
+.portal-preview-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--violet);
+  font-size: 14px;
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .portal {
+    min-height: 0;
+  }
+
+  .portal__inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

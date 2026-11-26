@@ -1,0 +1,76 @@
+body.xray-preview-open { overflow: hidden; }
+.xray-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(42, 20, 102, 0.52);
+  animation: fadeIn .18s ease-out;
+}
+.xray-preview-overlay[hidden] { display: none; }
+.xray-preview-dialog {
+  display: flex;
+  width: min(100%, 1000px);
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 20px;
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(42, 20, 102, 0.3);
+  animation: slideUp .18s ease-out;
+}
+.xray-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.xray-preview__header h2 { font-family: var(--display); font-size: 22px; }
+.xray-preview__filename { color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.xray-preview__close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+}
+.xray-preview__viewer {
+  display: grid;
+  min-height: 180px;
+  max-height: calc(100vh - 150px);
+  place-items: center;
+  overflow: auto;
+  border-radius: 14px;
+  background: #F7F6FA;
+}
+.xray-preview__message { padding: 24px; color: var(--muted); text-align: center; }
+.xray-preview__image { display: block; max-width: 100%; max-height: calc(100vh - 180px); object-fit: contain; }
+.xray-preview__document { width: 100%; height: calc(100vh - 190px); border: 0; background: var(--white); }
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 640px) {
+  .xray-preview-overlay { padding: 12px; }
+  .xray-preview-dialog { max-height: calc(100vh - 24px); padding: 14px; }
+  .xray-preview__viewer { max-height: calc(100vh - 112px); }
+  .xray-preview__image { max-height: calc(100vh - 130px); }
+  .xray-preview__document { height: calc(100vh - 130px); }
+}
