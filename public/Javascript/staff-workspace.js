@@ -46,15 +46,10 @@
       String(date.getDate()).padStart(2, '0');
   }
 
-  document.querySelectorAll('[data-demo-action]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      showToast(button.getAttribute('data-demo-action'));
-    });
-  });
-
   // ==================== BILLING ====================
   if (page.getAttribute('data-workspace-page') === 'billing') {
     var invoiceListEl = document.getElementById('invoice-list');
+    var pendingInvoiceListEl = document.getElementById('invoice-pending-list');
     var itemList = document.getElementById('invoice-items');
     var invoiceDialog = document.getElementById('invoice-dialog');
     var invoiceForm = document.getElementById('invoice-form');
@@ -151,18 +146,15 @@
       }
     }
 
-    function renderInvoices() {
-      var invoices = getInvoices();
-      updateSummary(invoices);
-      invoiceListEl.textContent = '';
-
-      var selected = null;
-      invoices.forEach(function (inv) {
-        if (!selectedInvoiceId && inv.id === 'INV-1043') selected = inv;
-        if (selectedInvoiceId && inv.id === selectedInvoiceId) selected = inv;
-      });
-      if (!selected && invoices.length) selected = invoices[0];
-
+    function renderInvoiceRows(listElement, invoices, selected, emptyMessage) {
+      listElement.textContent = '';
+      if (!invoices.length) {
+        var empty = document.createElement('p');
+        empty.className = 'invoice-empty';
+        empty.textContent = emptyMessage;
+        listElement.appendChild(empty);
+        return;
+      }
       invoices.forEach(function (inv) {
         var btn = document.createElement('button');
         btn.type = 'button';
@@ -197,10 +189,44 @@
           selectedInvoiceId = inv.id;
           renderInvoices();
         });
-        invoiceListEl.appendChild(btn);
+        listElement.appendChild(btn);
       });
+    }
 
-      if (selected) renderSelectedDetail(selected);
+    function renderInvoices() {
+      var invoices = getInvoices();
+      var pendingInvoices = invoices.filter(function (inv) { return inv.status !== 'Paid'; });
+      var completedInvoices = invoices.filter(function (inv) { return inv.status === 'Paid'; });
+      updateSummary(invoices);
+
+      var selected = invoices.find(function (inv) { return inv.id === selectedInvoiceId; }) || null;
+      if (!selected) selected = pendingInvoices[0] || completedInvoices[0] || null;
+      selectedInvoiceId = selected ? selected.id : null;
+
+      renderInvoiceRows(
+        pendingInvoiceListEl,
+        pendingInvoices,
+        selected,
+        'No payments are waiting for collection.'
+      );
+      renderInvoiceRows(
+        invoiceListEl,
+        completedInvoices,
+        selected,
+        'No completed transactions yet.'
+      );
+
+      if (selected) {
+        renderSelectedDetail(selected);
+      } else {
+        document.getElementById('detail-patient').textContent = 'No transaction selected';
+        document.getElementById('detail-invoice').textContent = '';
+        document.getElementById('detail-status').textContent = '—';
+        document.getElementById('detail-total').textContent = formatAmount(0);
+        itemList.textContent = '';
+        takePaymentBtn.disabled = true;
+        if (setupPlanBtn) setupPlanBtn.disabled = true;
+      }
     }
 
     document.querySelectorAll('[data-billing-method]').forEach(function (button) {
@@ -288,61 +314,34 @@
 
   // ==================== RECALLS ====================
   if (page.getAttribute('data-workspace-page') === 'recalls') {
-    var baseRecalls = {
-      overdue: [
-        { id: 'kiko', name: 'Kiko Ramos', visit: '6-month check-up', last: '21 Apr', due: '1 month late' },
-        { id: 'rosa', name: 'Rosa Aquino', visit: 'Scale and polish', last: '2 Mar', due: '3 months late' },
-        { id: 'dan', name: 'Dan Flores', visit: 'Scale and polish', last: '14 Feb', due: '4 months late' }
-      ],
-      month: [
-        { id: 'bea', name: 'Bea Santos', visit: 'Check-up', last: '26 May', due: 'Due this month' },
-        { id: 'jon', name: 'Jon Dela Cruz', visit: 'Cleaning', last: '27 May', due: 'Due this month' },
-        { id: 'aya', name: 'Aya Tan', visit: 'Check-up', last: '28 May', due: 'Due this month' }
-      ],
-      upcoming: [
-        { id: 'luis', name: 'Luis Garcia', visit: '6-month check-up', last: '9 Jun', due: 'Due in 2 weeks' },
-        { id: 'maria', name: 'Maria Reyes', visit: 'Check-up', last: '16 Jun', due: 'Due in 3 weeks' },
-        { id: 'ana', name: 'Ana Villar', visit: 'Cleaning', last: '25 Jun', due: 'Due next month' }
-      ]
-    };
-
-    function buildRecalls() {
-      var data = {
-        overdue: baseRecalls.overdue.slice(),
-        month: baseRecalls.month.slice(),
-        upcoming: baseRecalls.upcoming.slice()
-      };
-      if (storage) {
-        var existingNames = {};
-        ['overdue', 'month', 'upcoming'].forEach(function (k) {
-          data[k].forEach(function (item) {
-            existingNames[item.name.toLowerCase()] = true;
-          });
-        });
-        storage.getPatients().forEach(function (p) {
-          var name = ((p.firstName || '') + ' ' + (p.lastName || '')).trim();
-          if (!name || existingNames[name.toLowerCase()]) return;
-          existingNames[name.toLowerCase()] = true;
-          data.upcoming.push({
-            id: 'pt-' + p.id,
-            name: name,
-            visit: p.service || '6-month check-up',
-            last: p.lastVisit || 'Recent',
-            due: 'Due in 6 months'
-          });
-        });
-      }
-      return data;
-    }
-
-    var recalls = buildRecalls();
+    var recalls = storage && typeof storage.getRecallCandidates === 'function'
+      ? storage.getRecallCandidates()
+      : { overdue: [], month: [], upcoming: [] };
     var sentByList = storage && typeof storage.getRecallsSent === 'function'
       ? storage.getRecallsSent()
-      : { overdue: {}, month: {}, upcoming: {} };
+      : { scheduled: {} };
     var activeList = 'overdue';
-    var activeChannel = 'SMS';
     var recallList = document.getElementById('recall-list');
-    var template = document.getElementById('recall-template');
+    var sendAllButton = document.getElementById('send-all-reminders');
+    var recallTemplate = document.getElementById('recall-template');
+
+    function sentRecord(patient) {
+      var scheduled = sentByList.scheduled || {};
+      var patientRecords = scheduled[String(patient.id)] || {};
+      return patientRecords[patient.dueDate] || null;
+    }
+
+    function emailReminderSent(patient) {
+      var record = sentRecord(patient);
+      return Boolean(record && record.channel === 'Email' &&
+        String(record.email || '').toLowerCase() === String(patient.email || '').toLowerCase());
+    }
+
+    function reminderMessage(patient) {
+      var template = recallTemplate.value.trim() ||
+        'Hello {name}, this is a reminder that you are due for a dental visit on {due}. Please contact the clinic to schedule.';
+      return template.split('{name}').join(patient.name).split('{due}').join(patient.due);
+    }
 
     function updateFilterCounts() {
       document.querySelectorAll('[data-recall-filter]').forEach(function (btn) {
@@ -353,8 +352,9 @@
     }
 
     function updateRecallProgress() {
-      var listSent = sentByList[activeList] || {};
-      var sentCount = Object.keys(listSent).length;
+      var sentCount = recalls[activeList].filter(function (patient) {
+        return emailReminderSent(patient);
+      }).length;
       var total = recalls[activeList].length;
       document.getElementById('reminder-count').textContent = String(sentCount);
       document.getElementById('reminder-total').textContent = String(total);
@@ -364,20 +364,36 @@
     }
 
     function sendReminder(patient) {
-      if (storage && typeof storage.markRecallSent === 'function') {
-        sentByList = storage.markRecallSent(activeList, patient.id, activeChannel);
-      } else {
-        if (!sentByList[activeList]) sentByList[activeList] = {};
-        sentByList[activeList][patient.id] = true;
+      if (!patient.email) {
+        showToast('Add an email address before logging this reminder.');
+        return;
       }
-      renderRecalls();
-      showToast(activeChannel + ' recall reminder logged for ' + patient.name + '.');
+      try {
+        if (!storage || typeof storage.markRecallSent !== 'function') {
+          throw new Error('Reminder tracking is unavailable.');
+        }
+        sentByList = storage.markRecallSent(patient.id, patient.dueDate, 'Email', patient.email);
+        renderRecalls();
+        showToast('Reminder marked as sent for ' + patient.name + '. The app did not send the email.');
+      } catch (error) {
+        showToast(error.message || 'The reminder status could not be saved.');
+      }
     }
 
     function renderRecalls() {
       updateFilterCounts();
       recallList.textContent = '';
-      var listSent = sentByList[activeList] || {};
+      sendAllButton.disabled = !recalls[activeList].some(function (patient) {
+        return patient.email && !emailReminderSent(patient);
+      });
+      if (!recalls[activeList].length) {
+        var empty = document.createElement('p');
+        empty.className = 'recall-empty';
+        empty.textContent = 'No recall dates are due. Schedule one from a patient record.';
+        recallList.appendChild(empty);
+        updateRecallProgress();
+        return;
+      }
       recalls[activeList].forEach(function (patient) {
         var row = document.createElement('div');
         row.className = 'recall-row';
@@ -386,7 +402,7 @@
         var name = document.createElement('strong');
         var visit = document.createElement('small');
         name.textContent = patient.name;
-        visit.textContent = patient.visit;
+        visit.textContent = patient.email || 'Email not provided';
         person.appendChild(name);
         person.appendChild(visit);
 
@@ -397,27 +413,33 @@
         due.textContent = patient.due;
 
         var actions = document.createElement('span');
-        actions.style.display = 'inline-flex';
-        actions.style.gap = '6px';
-        actions.style.alignItems = 'center';
+        actions.className = 'recall-actions';
 
         var send = document.createElement('button');
         send.type = 'button';
         send.className = 'workspace-button workspace-button--outline recall-send';
-        send.textContent = listSent[patient.id] ? 'Sent' : 'Send ' + activeChannel;
-        send.disabled = Boolean(listSent[patient.id]);
+        var emailSent = emailReminderSent(patient);
+        send.textContent = emailSent ? 'Sent' : patient.email ? 'Mark sent' : 'No email';
+        send.disabled = Boolean(emailSent) || !patient.email;
         send.addEventListener('click', function () {
           sendReminder(patient);
         });
 
-        var bookLink = document.createElement('a');
-        bookLink.className = 'workspace-button workspace-button--outline';
-        bookLink.href = '/appointments?patient=' + encodeURIComponent(patient.name);
-        bookLink.textContent = 'Book';
-        bookLink.style.textDecoration = 'none';
+        var draft = document.createElement('a');
+        draft.className = 'workspace-button workspace-button--outline recall-send';
+        draft.textContent = 'Open email draft';
+        draft.href = patient.email
+          ? 'mailto:' + encodeURIComponent(patient.email) +
+            '?subject=' + encodeURIComponent('Dental recall reminder') +
+            '&body=' + encodeURIComponent(reminderMessage(patient))
+          : '#';
+        if (!patient.email) {
+          draft.setAttribute('aria-disabled', 'true');
+          draft.addEventListener('click', function (event) { event.preventDefault(); });
+        }
 
         actions.appendChild(send);
-        actions.appendChild(bookLink);
+        actions.appendChild(draft);
 
         row.appendChild(person);
         row.appendChild(lastVisit);
@@ -440,32 +462,28 @@
       });
     });
 
-    document.querySelectorAll('[data-message-channel]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        activeChannel = button.getAttribute('data-message-channel');
-        document.querySelectorAll('[data-message-channel]').forEach(function (channel) {
-          var selected = channel === button;
-          channel.classList.toggle('is-active', selected);
-          channel.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    sendAllButton.addEventListener('click', function () {
+      if (!recalls[activeList].length) {
+        showToast('No patients are due for a reminder.');
+        return;
+      }
+      var markedCount = 0;
+      var skippedCount = 0;
+      try {
+        recalls[activeList].forEach(function (patient) {
+          if (!patient.email || emailReminderSent(patient)) {
+            if (!patient.email && !emailReminderSent(patient)) skippedCount++;
+            return;
+          }
+          sentByList = storage.markRecallSent(patient.id, patient.dueDate, 'Email', patient.email);
+          markedCount++;
         });
-        template.value = activeChannel === 'SMS'
-          ? 'Hi [PATIENT], it is time for your [VISIT] at Dentistry With a Smile. Pick a time that suits you: [BOOKING LINK]. Reply here if you need help.'
-          : 'Subject: Time for your next dental visit\n\nHi [PATIENT],\n\nIt is time for your [VISIT] at Dentistry With a Smile. Choose a time that suits you: [BOOKING LINK].\n\nReply to this email if you need help.';
         renderRecalls();
-      });
-    });
-
-    document.getElementById('send-all-reminders').addEventListener('click', function () {
-      recalls[activeList].forEach(function (patient) {
-        if (storage && typeof storage.markRecallSent === 'function') {
-          sentByList = storage.markRecallSent(activeList, patient.id, activeChannel);
-        } else {
-          if (!sentByList[activeList]) sentByList[activeList] = {};
-          sentByList[activeList][patient.id] = true;
-        }
-      });
-      renderRecalls();
-      showToast('Logged ' + activeChannel + ' reminders for all patients in this list.');
+        showToast('Marked ' + markedCount + ' reminder(s) as sent; ' + skippedCount +
+          ' missing an email address. The app did not send emails.');
+      } catch (error) {
+        showToast(error.message || 'Reminder statuses could not be saved.');
+      }
     });
 
     renderRecalls();
@@ -563,9 +581,12 @@
       var maxAppointments = Math.max.apply(Math, data.bars.concat([1]));
       document.querySelectorAll('.bar-chart__item').forEach(function (bar, index) {
         bar.querySelector('[data-bar-value]').textContent = String(data.bars[index]);
+        var height = data.bars[index] === 0
+          ? 0
+          : Math.max(12, Math.round(data.bars[index] / maxAppointments * 100));
         bar.querySelector('.bar-chart__bar').style.setProperty(
           '--bar-height',
-          Math.max(12, Math.round(data.bars[index] / maxAppointments * 100)) + '%'
+          height + '%'
         );
       });
       document.querySelectorAll('.treatment-row').forEach(function (row, index) {

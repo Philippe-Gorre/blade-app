@@ -17,14 +17,11 @@
         <h1>Appointments</h1>
         <p class="muted" id="appointment-summary"></p>
       </div>
-      <button class="btn btn--primary" type="button" id="new-appointment">
-        <span aria-hidden="true">＋</span> New appointment
-      </button>
     </div>
 
     <div class="appointment-layout">
       <aside class="sidebar">
-        <section class="panel calendar-panel" aria-label="Calendar">
+        <section class="panel calendar-panel" aria-label="Appointments">
           <div class="month-head">
             <h2 id="calendar-month"></h2>
             <div class="round-actions">
@@ -49,7 +46,7 @@
             <button type="button" class="round-btn" id="next-day" aria-label="Next day">›</button>
             <button type="button" class="today-btn" id="go-today">Today</button>
           </div>
-          <div class="view-toggle" role="group" aria-label="Calendar view">
+          <div class="view-toggle" role="group" aria-label="Appointment view">
             <button type="button" class="is-active" id="day-view" aria-pressed="true">Day</button>
             <button type="button" id="week-view" aria-pressed="false">Week</button>
           </div>

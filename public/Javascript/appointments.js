@@ -2,11 +2,26 @@
 (function () {
   'use strict';
 
-  var DEFAULT_TIMES = ['9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm'];
+  var DEFAULT_TIMES = Array.isArray(window.CLINIC_TIMES) && window.CLINIC_TIMES.length
+    ? window.CLINIC_TIMES
+    : ['8:00 am', '9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm', '5:00 pm'];
+
+  function getChairsList() {
+    return (window.DentalStorage && typeof window.DentalStorage.getChairs === 'function')
+      ? window.DentalStorage.getChairs()
+      : [];
+  }
+
+  function getDentistName(chairNum) {
+    return (window.DentalStorage && typeof window.DentalStorage.getDentistName === 'function')
+      ? window.DentalStorage.getDentistName(chairNum)
+      : ('Doctor ' + chairNum);
+  }
   var state = {
     selectedDate: new Date(),
     calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     view: 'day',
+    activeBooking: null,
     activeAppointment: null,
     isSaving: false
   };
@@ -20,15 +35,42 @@
   var summaryEl = document.getElementById('appointment-summary');
   var appointmentModal = document.getElementById('appointment-modal');
   var appointmentForm = document.getElementById('appointment-form');
-  var appointmentDateInput = document.getElementById('appointment-date');
-  var appointmentTimeInput = document.getElementById('appointment-time');
-  var appointmentChairInput = document.getElementById('appointment-chair');
-  var appointmentPatientInput = document.getElementById('appointment-patient');
-  var appointmentPatientsList = document.getElementById('appointment-patients');
+  var appointmentSlotSummaryEl = document.getElementById('appointment-slot-summary');
+  var appointmentFirstNameInput = document.getElementById('appointment-first-name');
+  var appointmentLastNameInput = document.getElementById('appointment-last-name');
+  var appointmentPhoneInput = document.getElementById('appointment-phone');
+  var appointmentEmailInput = document.getElementById('appointment-email');
+  var appointmentServiceInput = document.getElementById('appointment-service');
+  var appointmentNoteInput = document.getElementById('appointment-note');
   var appointmentErrorEl = document.getElementById('appointment-error');
   var manageModal = document.getElementById('manage-modal');
+  var manageRescheduleTimeInput = document.getElementById('manage-reschedule-time');
+  var manageRescheduleTimeOptions = Array.prototype.slice.call(
+    manageRescheduleTimeInput.options
+  ).map(function (option) {
+    return option.value;
+  }).filter(Boolean);
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
+  var queryParams = new URLSearchParams(window.location.search);
+  var initialPatientName = queryParams.get('patient');
+  var initialReschedule = null;
+  var initialRescheduleDate = queryParams.get('rescheduleDate');
+  var initialRescheduleTime = queryParams.get('rescheduleTime');
+  var initialRescheduleChair = Number(queryParams.get('rescheduleChair'));
+  if (initialRescheduleDate && /^\d{4}-\d{2}-\d{2}$/.test(initialRescheduleDate) &&
+      localDateKey(dateFromKey(initialRescheduleDate)) === initialRescheduleDate &&
+      initialRescheduleTime && [1, 2].indexOf(initialRescheduleChair) >= 0) {
+    initialReschedule = {
+      date: initialRescheduleDate,
+      time: initialRescheduleTime,
+      chair: initialRescheduleChair,
+      patientId: queryParams.get('reschedulePatientId'),
+      patientName: queryParams.get('reschedulePatientName') || ''
+    };
+    state.selectedDate = dateFromKey(initialReschedule.date);
+    state.calendarMonth = new Date(state.selectedDate.getFullYear(), state.selectedDate.getMonth(), 1);
+  }
 
   function localDateKey(date) {
     return date.getFullYear() + '-' +
@@ -61,15 +103,14 @@
     return window.DentalStorage ? window.DentalStorage.getPatients() : [];
   }
 
+  function getPatientByContact(name, contact) {
+    if (!window.DentalStorage || typeof window.DentalStorage.findPatientByContact !== 'function') return null;
+    return window.DentalStorage.findPatientByContact(Object.assign({}, contact, { name: name }));
+  }
+
   function getPatientByName(name) {
     if (window.DentalStorage && typeof window.DentalStorage.findPatientByName === 'function') {
       return window.DentalStorage.findPatientByName(name);
-    }
-
-    var target = normalizeName(name);
-    var patients = getPatients();
-    for (var i = 0; i < patients.length; i++) {
-      if (normalizeName(fullName(patients[i])) === target) return patients[i];
     }
     return null;
   }
@@ -231,18 +272,32 @@
   }
 
   function renderDayView() {
+    var chairs = getChairsList();
     var schedule = normalizeSchedule(getSchedule(state.selectedDate));
     var count = 0;
     dayGridEl.textContent = '';
+
+    if (chairs.length === 0) {
+      dayGridEl.style.gridTemplateColumns = '1fr';
+      var emptyMsg = document.createElement('div');
+      emptyMsg.className = 'slot slot--break';
+      emptyMsg.style.padding = '28px 20px';
+      emptyMsg.style.textAlign = 'center';
+      emptyMsg.textContent = 'No doctors registered yet. An admin can create doctor accounts in Admin → Accounts.';
+      dayGridEl.appendChild(emptyMsg);
+      return 0;
+    }
+
+    dayGridEl.style.gridTemplateColumns = '76px repeat(' + chairs.length + ', minmax(220px, 1fr))';
     dayGridEl.appendChild(document.createElement('div'));
 
-    [1, 2].forEach(function (chair) {
+    chairs.forEach(function (chair) {
       var head = document.createElement('div');
       head.className = 'chair-head';
       var title = document.createElement('strong');
-      title.textContent = 'Chair ' + chair;
+      title.textContent = chair.name;
       var dentist = document.createElement('span');
-      dentist.textContent = chair === 1 ? 'Dr. Mora' : 'Dr. Silva';
+      dentist.textContent = chair.dentist;
       head.appendChild(title);
       head.appendChild(dentist);
       dayGridEl.appendChild(head);
@@ -253,11 +308,11 @@
       time.className = 'time-label';
       time.textContent = row.time;
       dayGridEl.appendChild(time);
-      [row.chair1, row.chair2].forEach(function (slot) {
+      chairs.forEach(function (chair) {
+        var slot = row['chair' + chair.id] || null;
         if (slot && slot.type !== 'break' && slot.patientName) count++;
+        dayGridEl.appendChild(createAppointmentCell(row.time, chair.id, slot));
       });
-      dayGridEl.appendChild(createAppointmentCell(row.time, 1, row.chair1));
-      dayGridEl.appendChild(createAppointmentCell(row.time, 2, row.chair2));
     });
     return count;
   }
@@ -361,27 +416,40 @@
 
   function openAppointmentModal(date, time, chair) {
     appointmentForm.reset();
-    appointmentDateInput.value = localDateKey(date);
-    if (time) appointmentTimeInput.value = time;
-    if (chair) appointmentChairInput.value = String(chair);
+    state.activeBooking = { date: new Date(date), time: time, chair: chair };
+    var dentist = getDentistName(chair);
+    appointmentSlotSummaryEl.textContent =
+      formatDate(date, { weekday: 'long', month: 'long', day: 'numeric' }) +
+      ' · ' + time + ' · Chair ' + chair + ' (' + dentist + ')';
     appointmentErrorEl.hidden = true;
-    appointmentPatientsList.textContent = '';
-    getPatients().forEach(function (patient) {
-      var option = document.createElement('option');
-      option.value = fullName(patient);
-      appointmentPatientsList.appendChild(option);
-    });
+    if (initialPatientName) {
+      var existingPatient = getPatientByName(initialPatientName);
+      var nameParts = initialPatientName.trim().split(/\s+/);
+      appointmentFirstNameInput.value = existingPatient
+        ? existingPatient.firstName
+        : nameParts.shift() || '';
+      appointmentLastNameInput.value = existingPatient
+        ? existingPatient.lastName
+        : nameParts.join(' ');
+      if (existingPatient) {
+        appointmentPhoneInput.value = existingPatient.phone || '';
+        appointmentEmailInput.value = existingPatient.email || '';
+        appointmentNoteInput.value = existingPatient.note || '';
+      }
+      initialPatientName = null;
+    }
     appointmentModal.hidden = false;
-    appointmentPatientInput.focus();
+    appointmentFirstNameInput.focus();
   }
 
   function closeModal(modal) {
     modal.hidden = true;
-    state.activeAppointment = null;
+    if (modal === appointmentModal) state.activeBooking = null;
+    if (modal === manageModal) state.activeAppointment = null;
   }
 
-  function updatePatientForAppointment(patient, date, time, chair, service, status) {
-    var doctor = chair === 1 ? 'Dr. Mora' : 'Dr. Silva';
+  function updatePatientForAppointment(patient, date, time, chair, service, contact) {
+    var doctor = getDentistName(chair);
     var visitDate = sameDate(date, new Date())
       ? 'Today, ' + time
       : formatDate(date, { weekday: 'short' }) + ', ' + time;
@@ -389,73 +457,98 @@
       nextVisit: visitDate,
       nextVisitDetail: service + ' with ' + doctor + ', Chair ' + chair,
       dentist: doctor,
-      status: status,
-      statusLabel: statusLabel(status),
+      status: 'confirmed',
+      statusLabel: 'Confirmed',
       visitingToday: sameDate(date, new Date())
     };
+    if (contact.phone) updates.phone = contact.phone;
+    if (contact.email) updates.email = contact.email;
+    if (contact.note) updates.note = contact.note;
     if (window.DentalStorage && typeof window.DentalStorage.updatePatient === 'function') {
       return window.DentalStorage.updatePatient(patient.id, updates);
     }
     return patient;
   }
 
-  function createPatientForAppointment(name, date, time, chair, service, status) {
-    var existing = getPatientByName(name);
-    if (existing) return updatePatientForAppointment(existing, date, time, chair, service, status);
+  function createPatientForAppointment(firstName, lastName, date, time, chair, service, contact) {
+    var name = firstName + ' ' + lastName;
+    var existing = getPatientByContact(name, contact);
+    if (existing) {
+      if (normalizeName(fullName(existing)) !== normalizeName(name)) {
+        throw new Error('This email address is already associated with a different patient.');
+      }
+      return updatePatientForAppointment(existing, date, time, chair, service, contact);
+    }
 
-    var parts = String(name).trim().split(/\s+/);
     var now = new Date();
     var patient = window.DentalStorage.addPatient({
-      firstName: parts[0] || 'Patient',
-      lastName: parts.slice(1).join(' '),
+      firstName: firstName,
+      lastName: lastName,
       lastVisit: 'None yet',
-      phone: '',
-      email: '',
-      dentist: chair === 1 ? 'Dr. Mora' : 'Dr. Silva',
+      phone: contact.phone,
+      email: contact.email,
+      dentist: getDentistName(chair),
       patientSince: formatDate(now, { month: 'long', year: 'numeric' }),
       isNew: true,
       visitingToday: sameDate(date, now),
-      note: '',
+      note: contact.note,
       history: []
     });
-    return updatePatientForAppointment(patient, date, time, chair, service, status);
+    return updatePatientForAppointment(patient, date, time, chair, service, contact);
   }
 
   appointmentForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (state.isSaving) return;
-    var name = appointmentPatientInput.value.trim().replace(/\s+/g, ' ');
-    if (!name || name.length > 120) {
-      appointmentErrorEl.textContent = 'Enter a patient name up to 120 characters.';
+    if (state.isSaving || !state.activeBooking) return;
+
+    var firstName = appointmentFirstNameInput.value.trim().replace(/\s+/g, ' ');
+    var lastName = appointmentLastNameInput.value.trim().replace(/\s+/g, ' ');
+    var phone = appointmentPhoneInput.value.trim();
+    var email = appointmentEmailInput.value.trim().toLowerCase();
+    var service = appointmentServiceInput.value;
+    var note = appointmentNoteInput.value.trim();
+    var name = firstName + ' ' + lastName;
+    var date = state.activeBooking.date;
+    var time = state.activeBooking.time;
+    var chair = Number(state.activeBooking.chair);
+
+    if (!firstName || firstName.length > 80 || !lastName || lastName.length > 80) {
+      appointmentErrorEl.textContent = 'Enter first and last names up to 80 characters.';
       appointmentErrorEl.hidden = false;
-      appointmentPatientInput.focus();
+      appointmentFirstNameInput.focus();
       return;
     }
-
-    var dateKey = appointmentDateInput.value;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-      appointmentErrorEl.textContent = 'Choose a valid appointment date.';
+    if (!window.DentalStorage.isValidPhoneNumber(phone)) {
+      appointmentErrorEl.textContent = 'Enter a valid phone number with 7 to 15 digits.';
       appointmentErrorEl.hidden = false;
-      appointmentDateInput.focus();
+      appointmentPhoneInput.focus();
       return;
     }
-
-    var date = dateFromKey(dateKey);
-    if (isNaN(date.getTime()) || localDateKey(date) !== dateKey) {
-      appointmentErrorEl.textContent = 'Choose a valid appointment date.';
+    if (!window.DentalStorage.isValidEmailAddress(email)) {
+      appointmentErrorEl.textContent = 'Enter a valid email address or leave it blank.';
       appointmentErrorEl.hidden = false;
-      appointmentDateInput.focus();
+      appointmentEmailInput.focus();
       return;
     }
-
-    var time = appointmentTimeInput.value;
-    var chair = Number(appointmentChairInput.value);
-    var service = document.getElementById('appointment-service').value;
-    var status = document.getElementById('appointment-status').value;
-    if (DEFAULT_TIMES.indexOf(time) < 0 || (chair !== 1 && chair !== 2) ||
-        !service ||
-        ['confirmed', 'checked-in', 'emergency', 'completed'].indexOf(status) < 0) {
-      appointmentErrorEl.textContent = 'Choose a valid appointment time, chair, and status.';
+    var existingPatient = getPatientByContact(name, { email: email, phone: phone });
+    var emailOwner = email ? window.DentalStorage.findPatientByEmail(email) : null;
+    if (email && window.DentalStorage.hasPatientEmail(email) &&
+        (!emailOwner || !existingPatient || String(emailOwner.id) !== String(existingPatient.id))) {
+      appointmentErrorEl.textContent = 'This email address is already associated with another patient.';
+      appointmentErrorEl.hidden = false;
+      appointmentEmailInput.focus();
+      return;
+    }
+    if (existingPatient && normalizeName(fullName(existingPatient)) !== normalizeName(name)) {
+      appointmentErrorEl.textContent = 'This email address is already associated with a different patient.';
+      appointmentErrorEl.hidden = false;
+      appointmentEmailInput.focus();
+      return;
+    }
+    var maxChairs = Math.max(1, getChairsList().length);
+    if (DEFAULT_TIMES.indexOf(time) < 0 || !Number.isInteger(chair) || chair < 1 || chair > maxChairs ||
+        !service) {
+      appointmentErrorEl.textContent = 'Choose a valid appointment time, chair, and service.';
       appointmentErrorEl.hidden = false;
       return;
     }
@@ -469,7 +562,12 @@
       return;
     }
 
-    if (window.DentalStorage.hasPatientAtTime(schedule, name, time)) {
+    if (window.DentalStorage.hasPatientAtTime(schedule, {
+      id: existingPatient && existingPatient.id,
+      name: name,
+      email: email,
+      phone: phone
+    }, time)) {
       appointmentErrorEl.textContent = 'This patient already has an appointment at that time.';
       appointmentErrorEl.hidden = false;
       return;
@@ -477,20 +575,34 @@
 
     state.isSaving = true;
     try {
-      var patient = createPatientForAppointment(name, date, time, chair, service, status);
+      var contact = { phone: phone, email: email, note: note };
+      var previousPatient = existingPatient ? JSON.parse(JSON.stringify(existingPatient)) : null;
+      var patient = createPatientForAppointment(firstName, lastName, date, time, chair, service, contact);
       if (!patient) throw new Error('The patient record could not be saved.');
 
-      setSlot(date, time, chair, {
-        patientId: patient.id,
-        patientName: name,
-        service: service,
-        status: status,
-        statusLabel: statusLabel(status)
-      });
-
-      var savedSlot = getSlotAt(getSchedule(date), time, chair);
-      if (!savedSlot || String(savedSlot.patientId) !== String(patient.id)) {
-        throw new Error('The appointment could not be saved. Please try again.');
+      try {
+        setSlot(date, time, chair, {
+          patientId: patient.id,
+          patientName: name,
+          patientEmail: email,
+          patientPhone: phone,
+          service: service,
+          dentist: getDentistName(chair),
+          note: note,
+          status: 'confirmed',
+          statusLabel: 'Confirmed'
+        });
+        var savedSlot = getSlotAt(getSchedule(date), time, chair);
+        if (!savedSlot || String(savedSlot.patientId) !== String(patient.id)) {
+          throw new Error('The appointment could not be saved. Please try again.');
+        }
+      } catch (error) {
+        if (previousPatient) {
+          window.DentalStorage.updatePatient(patient.id, previousPatient);
+        } else if (typeof window.DentalStorage.deletePatient === 'function') {
+          window.DentalStorage.deletePatient(patient.id);
+        }
+        throw error;
       }
 
       closeModal(appointmentModal);
@@ -510,22 +622,75 @@
     if (slot.patientId && window.DentalStorage && typeof window.DentalStorage.getPatientById === 'function') {
       var patient = window.DentalStorage.getPatientById(slot.patientId);
       if (patient) return patient;
+      return null;
     }
-    return getPatientByName(slot.patientName);
+    return slot.patientId === undefined || slot.patientId === null
+      ? getPatientByName(slot.patientName)
+      : null;
   }
 
   function openManageModal(time, chair, slot) {
     state.activeAppointment = { date: new Date(state.selectedDate), time: time, chair: chair, slot: slot };
     document.getElementById('manage-patient').textContent = slot.patientName;
     document.getElementById('manage-info').textContent = formatDate(state.selectedDate, { weekday: 'long', month: 'long', day: 'numeric' }) +
-      ' · ' + time + ' · Chair ' + chair + (chair === 1 ? ' (Dr. Mora)' : ' (Dr. Silva)');
+      ' · ' + time + ' · Chair ' + chair + ' (' + getDentistName(chair) + ')';
     document.getElementById('manage-service').textContent = slot.service || 'Appointment';
     document.getElementById('manage-status').value = slot.status || 'confirmed';
     var reschedForm = document.getElementById('manage-reschedule-form');
     var reschedErr = document.getElementById('manage-reschedule-error');
     if (reschedForm) reschedForm.hidden = true;
     if (reschedErr) reschedErr.hidden = true;
+    document.getElementById('manage-status-field').hidden = false;
+    document.getElementById('save-status').hidden = false;
     manageModal.hidden = false;
+  }
+
+  function updateManageRescheduleTimes() {
+    var dateInput = document.getElementById('manage-reschedule-date');
+    var chairInput = document.getElementById('manage-reschedule-chair');
+    var error = document.getElementById('manage-reschedule-error');
+    if (!dateInput.value || !chairInput.value) return;
+
+    try {
+      var source = state.activeAppointment
+        ? {
+          date: localDateKey(state.activeAppointment.date),
+          time: state.activeAppointment.time,
+          chair: state.activeAppointment.chair
+        }
+        : null;
+      var availableTimes = window.DentalStorage.getAvailableAppointmentTimes(
+        dateInput.value,
+        Number(chairInput.value),
+        source,
+        manageRescheduleTimeOptions
+      );
+      manageRescheduleTimeInput.textContent = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = availableTimes.length
+        ? 'Choose an available time'
+        : 'No available times';
+      manageRescheduleTimeInput.appendChild(placeholder);
+      availableTimes.forEach(function (time) {
+        var option = document.createElement('option');
+        option.value = time;
+        option.textContent = time;
+        manageRescheduleTimeInput.appendChild(option);
+      });
+
+      if (error) {
+        error.textContent = availableTimes.length
+          ? ''
+          : 'No available times for this doctor on the selected date.';
+        error.hidden = availableTimes.length > 0;
+      }
+    } catch (availabilityError) {
+      if (error) {
+        error.textContent = availabilityError.message || 'Could not check appointment availability.';
+        error.hidden = false;
+      }
+    }
   }
 
   var openRescheduleBtn = document.getElementById('open-reschedule-appt');
@@ -536,30 +701,53 @@
     openRescheduleBtn.addEventListener('click', function () {
       if (!state.activeAppointment) return;
       var dateInput = document.getElementById('manage-reschedule-date');
-      var timeInput = document.getElementById('manage-reschedule-time');
       var chairInput = document.getElementById('manage-reschedule-chair');
       if (dateInput) {
         dateInput.min = localDateKey(new Date());
         dateInput.value = localDateKey(state.activeAppointment.date);
       }
-      if (timeInput) timeInput.value = state.activeAppointment.time;
       if (chairInput) chairInput.value = String(state.activeAppointment.chair);
       if (manageRescheduleErr) manageRescheduleErr.hidden = true;
       manageRescheduleForm.hidden = !manageRescheduleForm.hidden;
+      var rescheduling = !manageRescheduleForm.hidden;
+      document.getElementById('manage-status-field').hidden = rescheduling;
+      document.getElementById('save-status').hidden = rescheduling;
+      if (!manageRescheduleForm.hidden) updateManageRescheduleTimes();
     });
     if (cancelRescheduleBtn) {
       cancelRescheduleBtn.addEventListener('click', function () {
         manageRescheduleForm.hidden = true;
+        document.getElementById('manage-status-field').hidden = false;
+        document.getElementById('save-status').hidden = false;
       });
     }
+    ['manage-reschedule-date', 'manage-reschedule-chair'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', updateManageRescheduleTimes);
+    });
+    manageRescheduleTimeInput.addEventListener('change', function () {
+      if (manageRescheduleErr) manageRescheduleErr.hidden = true;
+    });
     manageRescheduleForm.addEventListener('submit', function (event) {
       event.preventDefault();
       if (!state.activeAppointment || !window.DentalStorage || typeof window.DentalStorage.rescheduleSlot !== 'function') return;
+      if (!manageRescheduleForm.reportValidity()) return;
       var fromDate = localDateKey(state.activeAppointment.date);
       var toDate = document.getElementById('manage-reschedule-date').value;
-      var toTime = document.getElementById('manage-reschedule-time').value;
+      var toTime = manageRescheduleTimeInput.value;
       var toChair = Number(document.getElementById('manage-reschedule-chair').value);
       try {
+        var availableTimes = window.DentalStorage.getAvailableAppointmentTimes(
+          toDate,
+          toChair,
+          { date: fromDate, time: state.activeAppointment.time, chair: state.activeAppointment.chair },
+          manageRescheduleTimeOptions
+        );
+        if (availableTimes.indexOf(toTime) < 0) {
+          manageRescheduleErr.textContent = 'That time is no longer available for this doctor. Choose another time.';
+          manageRescheduleErr.hidden = false;
+          updateManageRescheduleTimes();
+          return;
+        }
         var moved = window.DentalStorage.rescheduleSlot(
           fromDate,
           state.activeAppointment.time,
@@ -634,9 +822,6 @@
     }
   });
 
-  document.getElementById('new-appointment').addEventListener('click', function () {
-    openAppointmentModal(state.selectedDate);
-  });
   document.getElementById('prev-month').addEventListener('click', function () {
     state.calendarMonth = new Date(state.calendarMonth.getFullYear(), state.calendarMonth.getMonth() - 1, 1);
     renderCalendar();
@@ -665,11 +850,23 @@
 
   renderAll();
 
-  var initialPatient = new URLSearchParams(window.location.search).get('patient');
-  if (initialPatient) {
-    openAppointmentModal(state.selectedDate);
-    if (appointmentPatientInput) {
-      appointmentPatientInput.value = initialPatient;
+  if (initialReschedule) {
+    var sourceSlot = getSlotAt(
+      getSchedule(state.selectedDate),
+      initialReschedule.time,
+      initialReschedule.chair
+    );
+    var matchesPatientId = sourceSlot && initialReschedule.patientId &&
+      String(sourceSlot.patientId) === String(initialReschedule.patientId);
+    var matchesPatientName = sourceSlot &&
+      normalizeName(sourceSlot.patientName) === normalizeName(initialReschedule.patientName);
+    if (sourceSlot && sourceSlot.type !== 'break' && (matchesPatientId || matchesPatientName)) {
+      openManageModal(initialReschedule.time, initialReschedule.chair, sourceSlot);
+      openRescheduleBtn.click();
+    } else {
+      showToast('The appointment could not be found. Return to the patient page and refresh.');
     }
+  } else if (initialPatientName) {
+    showToast('Choose an open appointment slot to book for ' + initialPatientName + '.');
   }
 })();

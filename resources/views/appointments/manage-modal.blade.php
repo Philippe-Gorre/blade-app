@@ -9,7 +9,7 @@
       <span class="muted" id="manage-info"></span>
       <span id="manage-service"></span>
     </div>
-    <div class="field">
+    <div class="field" id="manage-status-field">
       <label for="manage-status">Status</label>
       <select id="manage-status" class="input">
         @foreach (config('clinic.statuses') as $key => $label)
@@ -25,9 +25,10 @@
         </div>
         <div class="field">
           <label for="manage-reschedule-time">New time</label>
-          <select id="manage-reschedule-time" class="input">
+          <select id="manage-reschedule-time" class="input" required>
+            <option value="">Choose an available time</option>
             @foreach (config('clinic.time_slots') as $slot)
-              <option>{{ $slot }}</option>
+              <option value="{{ $slot }}">{{ $slot }}</option>
             @endforeach
           </select>
         </div>
@@ -35,9 +36,11 @@
       <div class="field">
         <label for="manage-reschedule-chair">Chair</label>
         <select id="manage-reschedule-chair" class="input">
-          @foreach (config('clinic.chairs') as $chair)
+          @forelse ($clinicChairs ?? [] as $chair)
             <option value="{{ $chair['id'] }}">{{ $chair['name'] }} – {{ $chair['dentist'] }}</option>
-          @endforeach
+          @empty
+            <option value="" disabled selected>No doctors registered</option>
+          @endforelse
         </select>
       </div>
       <p class="form-error" id="manage-reschedule-error" role="alert" hidden></p>

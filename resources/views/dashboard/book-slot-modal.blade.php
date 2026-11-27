@@ -40,14 +40,6 @@
         <label for="slot-note">Front desk note</label>
         <textarea class="modal__input modal__textarea" id="slot-note" maxlength="500" placeholder="Any notes about the patient…"></textarea>
       </div>
-      <div class="modal__field">
-        <label for="slot-status">Status</label>
-        <select class="modal__input" id="slot-status">
-          @foreach (config('clinic.booking_statuses') as $key)
-            <option value="{{ $key }}">{{ config('clinic.statuses.' . $key) }}</option>
-          @endforeach
-        </select>
-      </div>
       <div class="modal__actions">
         <button class="btn btn--primary" type="submit">Save appointment</button>
         <button class="btn btn--outline" type="button" id="cancel-book-modal">Cancel</button>

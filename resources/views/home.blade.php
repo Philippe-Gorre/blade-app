@@ -3,7 +3,7 @@
 @section('title', config('app.name'))
 
 @push('scripts')
-  <script src="{{ asset('Javascript/Booking.js') }}" defer></script>
+  <script src="{{ asset('Javascript/Booking.js') }}?v={{ filemtime(public_path('Javascript/Booking.js')) }}" defer></script>
 @endpush
 
 @section('content')

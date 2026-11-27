@@ -11,6 +11,8 @@
   var emailInput = document.getElementById('pt-email');
   var dateInput = document.getElementById('pt-date');
   var serviceSelect = document.getElementById('pt-service');
+  var chairOptionsEl = document.getElementById('pt-chair-options');
+  var timeOptionsEl = document.getElementById('pt-time-options');
   var availableSlotsEl = document.getElementById('pt-available-slots');
   var availabilityMessageEl = document.getElementById('pt-availability-message');
   var submitBtn = document.getElementById('pt-submit');
@@ -29,16 +31,33 @@
   var accountForm = document.getElementById('account-create-form');
   var accountEmailInput = document.getElementById('account-email');
   var accountFormStatus = document.getElementById('account-form-status');
+  var bookingSuccessToast = document.getElementById('booking-success-toast');
   var accountModalCloseBtn = document.getElementById('account-modal-close');
   var accountModalCancelBtn = document.getElementById('account-modal-cancel');
   var bookingSteps = Array.prototype.slice.call(document.querySelectorAll('[data-booking-step]'));
   var progressSteps = Array.prototype.slice.call(document.querySelectorAll('[data-progress-step]'));
   var selectedSlot = null;
+  var selectedChair = null;
   var isSaving = false;
   var isComplete = false;
+  var bookingSuccessTimer = null;
   var lastFocusedElement = null;
   var lastAccountFocusedElement = null;
-  var TIMES = ['9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm'];
+  var TIMES = Array.isArray(window.CLINIC_TIMES) && window.CLINIC_TIMES.length
+    ? window.CLINIC_TIMES
+    : ['8:00 am', '9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm', '5:00 pm'];
+
+  function getChairsList() {
+    return (window.DentalStorage && typeof window.DentalStorage.getChairs === 'function')
+      ? window.DentalStorage.getChairs()
+      : [];
+  }
+
+  function getDentistName(chairNum) {
+    return (window.DentalStorage && typeof window.DentalStorage.getDentistName === 'function')
+      ? window.DentalStorage.getDentistName(chairNum)
+      : ('Doctor ' + chairNum);
+  }
 
   function localDateKey(date) {
     return date.getFullYear() + '-' +
@@ -58,6 +77,16 @@
     statusEl.textContent = message;
     statusEl.className = 'booking-status' + (kind ? ' is-' + kind : '');
     statusEl.hidden = !message;
+  }
+
+  function showBookingSuccess(message) {
+    if (!bookingSuccessToast) return;
+    bookingSuccessToast.textContent = message;
+    bookingSuccessToast.hidden = false;
+    clearTimeout(bookingSuccessTimer);
+    bookingSuccessTimer = setTimeout(function () {
+      bookingSuccessToast.hidden = true;
+    }, 7000);
   }
 
   function setStep(step) {
@@ -100,6 +129,9 @@
 
   function openAccountModal() {
     lastAccountFocusedElement = document.activeElement;
+    if (accountEmailInput && emailInput) {
+      accountEmailInput.value = emailInput.value.trim();
+    }
     accountModal.hidden = false;
     accountEmailInput.focus();
   }
@@ -145,20 +177,54 @@
     return timeInMinutes(time) <= now.getHours() * 60 + now.getMinutes();
   }
 
-  function createEmptyMessage(message) {
+  function createEmptyMessage(container, message) {
     var empty = document.createElement('p');
     empty.className = 'available-slots__empty';
     empty.textContent = message;
-    availableSlotsEl.appendChild(empty);
+    container.appendChild(empty);
+  }
+
+  function renderAvailableTimes(schedule, date, chair) {
+    availableSlotsEl.textContent = '';
+    timeOptionsEl.hidden = false;
+    var chairLabel = 'Chair ' + chair + ' (' + getDentistName(chair) + ')';
+    availabilityMessageEl.textContent = 'Step 2: Choose an available time for ' + chairLabel + '.';
+
+    var offered = 0;
+    TIMES.forEach(function (time) {
+      if (getSlot(schedule, time, chair) || isPastToday(date, time)) return;
+      offered++;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'available-slot';
+      button.setAttribute('aria-pressed', 'false');
+      button.textContent = time;
+      button.addEventListener('click', function () {
+        selectedSlot = { time: time, chair: chair };
+        setStatus('', '');
+        availableSlotsEl.querySelectorAll('.available-slot').forEach(function (slotButton) {
+          slotButton.setAttribute('aria-pressed', slotButton === button ? 'true' : 'false');
+        });
+      });
+      availableSlotsEl.appendChild(button);
+    });
+
+    if (offered === 0) {
+      availabilityMessageEl.textContent = 'No appointment times are available for ' + chairLabel + '.';
+      createEmptyMessage(availableSlotsEl, 'Choose another doctor and chair or date.');
+    }
   }
 
   function renderAvailableSlots() {
     selectedSlot = null;
+    selectedChair = null;
+    chairOptionsEl.textContent = '';
     availableSlotsEl.textContent = '';
+    timeOptionsEl.hidden = true;
 
     if (!dateInput.value) {
-      availabilityMessageEl.textContent = 'Select a date to see open appointment times.';
-      createEmptyMessage('Choose a date first.');
+      availabilityMessageEl.textContent = 'Select a date to choose a doctor and chair.';
+      createEmptyMessage(chairOptionsEl, 'Choose a date first.');
       return;
     }
 
@@ -169,47 +235,62 @@
     } catch (error) {
       console.error('Could not load appointment availability:', error);
       availabilityMessageEl.textContent = 'Availability could not be loaded.';
-      createEmptyMessage('Please refresh the page or call the clinic.');
+      createEmptyMessage(chairOptionsEl, 'Please refresh the page or call the clinic.');
       return;
     }
 
-    var offered = 0;
-    availabilityMessageEl.textContent = 'Choose an available time and chair.';
-    TIMES.forEach(function (time) {
-      [1, 2].forEach(function (chair) {
-        if (getSlot(schedule, time, chair) || isPastToday(date, time)) return;
-        offered++;
-        var button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'available-slot';
-        button.setAttribute('aria-pressed', 'false');
-        button.textContent = time + ' · Chair ' + chair + (chair === 1 ? ' (Dr. Mora)' : ' (Dr. Silva)');
-        button.addEventListener('click', function () {
-          selectedSlot = { time: time, chair: chair };
-          setStatus('', '');
-          availableSlotsEl.querySelectorAll('.available-slot').forEach(function (slotButton) {
-            slotButton.setAttribute('aria-pressed', slotButton === button ? 'true' : 'false');
-          });
-        });
-        availableSlotsEl.appendChild(button);
+    var chairs = getChairsList();
+    if (!chairs.length) {
+      availabilityMessageEl.textContent = 'No doctors are available for online booking yet.';
+      createEmptyMessage(chairOptionsEl, 'Please contact the clinic.');
+      return;
+    }
+
+    var availableChairs = chairs.filter(function (chairObj) {
+      return TIMES.some(function (time) {
+        return !getSlot(schedule, time, chairObj.id) && !isPastToday(date, time);
       });
     });
 
-    if (offered === 0) {
+    if (!availableChairs.length) {
       availabilityMessageEl.textContent = 'No appointment times are available on this date.';
-      createEmptyMessage('Please choose another day.');
+      createEmptyMessage(chairOptionsEl, 'Please choose another day.');
+      return;
     }
+
+    availabilityMessageEl.textContent = 'Step 1: Choose a doctor and chair.';
+    availableChairs.forEach(function (chairObj) {
+      var chair = chairObj.id;
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'available-slot';
+      button.setAttribute('aria-pressed', 'false');
+      button.textContent = chairObj.name + ' · ' + chairObj.dentist;
+      button.addEventListener('click', function () {
+        selectedChair = chair;
+        selectedSlot = null;
+        setStatus('', '');
+        chairOptionsEl.querySelectorAll('.available-slot').forEach(function (chairButton) {
+          chairButton.setAttribute('aria-pressed', chairButton === button ? 'true' : 'false');
+        });
+        renderAvailableTimes(schedule, date, chair);
+      });
+      chairOptionsEl.appendChild(button);
+    });
   }
 
   function validateContact() {
     var first = firstInput.value.trim().replace(/\s+/g, ' ');
     var last = lastInput.value.trim().replace(/\s+/g, ' ');
-    var phone = phoneInput.value.trim();
-    var email = emailInput ? emailInput.value.trim() : '';
-    var firstBad = !first || first.length > 80;
-    var lastBad = !last || last.length > 80;
-    var phoneBad = !window.DentalStorage || !window.DentalStorage.isValidPhoneNumber(phone);
-    var emailBad = !window.DentalStorage || !window.DentalStorage.isValidEmailAddress(email);
+    var phone = String(phoneInput.value || '');
+    var email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+    var firstBad = !first || first.length > 80 || /[\u0000-\u001F\u007F]/.test(first);
+    var lastBad = !last || last.length > 80 || /[\u0000-\u001F\u007F]/.test(last);
+    var phoneBad = !/^\d{11}$/.test(phone);
+    var emailBad = !email || !window.DentalStorage || !window.DentalStorage.isValidEmailAddress(email);
+    var gmailBad = !emailBad && !/^[^\s@]+@gmail\.com$/.test(email);
+
+    if (emailInput) emailInput.value = email;
 
     markInvalid(firstInput, firstBad);
     markInvalid(lastInput, lastBad);
@@ -227,12 +308,17 @@
       return null;
     }
     if (phoneBad) {
-      setStatus('Enter a valid phone number with 7 to 15 digits.', 'error');
+      setStatus('Enter an 11-digit cellphone number using numbers only.', 'error');
       phoneInput.focus();
       return null;
     }
-    if (emailBad && email) {
-      setStatus('Enter a valid email address or leave the field blank.', 'error');
+    if (emailBad) {
+      setStatus('Enter a valid Gmail address.', 'error');
+      emailInput.focus();
+      return null;
+    }
+    if (gmailBad) {
+      setStatus('Enter a valid Gmail address ending in @gmail.com.', 'error');
       emailInput.focus();
       return null;
     }
@@ -251,7 +337,9 @@
     var dateBad = !dateInput.value || isNaN(appointmentDate.getTime()) ||
       localDateKey(appointmentDate) !== dateInput.value ||
       dateInput.value < localDateKey(new Date());
-    var serviceBad = !serviceSelect.value;
+    var serviceBad = !Array.prototype.some.call(serviceSelect.options, function (option) {
+      return option.value === serviceSelect.value && !option.disabled;
+    });
 
     markInvalid(dateInput, dateBad);
     markInvalid(serviceSelect, serviceBad);
@@ -265,13 +353,24 @@
       serviceSelect.focus();
       return null;
     }
-    if (!selectedSlot) {
-      setStatus('Choose an available time and chair.', 'error');
-      availableSlotsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!chairOptionsEl.querySelector('.available-slot')) {
+      setStatus('No appointments are available on this date. Choose another date.', 'error');
+      dateInput.focus();
       return null;
     }
+    if (selectedChair !== 1 && selectedChair !== 2) {
+      setStatus('Choose a doctor and chair first.', 'error');
+      chairOptionsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return null;
+    }
+    if (!selectedSlot) {
+      setStatus('Choose an available time for the selected doctor and chair.', 'error');
+      timeOptionsEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return null;
+    }
+    var maxChairs = Math.max(1, getChairsList().length);
     if (TIMES.indexOf(selectedSlot.time) < 0 ||
-        (selectedSlot.chair !== 1 && selectedSlot.chair !== 2)) {
+        !Number.isInteger(Number(selectedSlot.chair)) || Number(selectedSlot.chair) < 1 || Number(selectedSlot.chair) > maxChairs) {
       setStatus('Choose an available appointment time and chair.', 'error');
       return null;
     }
@@ -328,28 +427,22 @@
     document.getElementById('review-datetime').textContent = formattedDate + ' at ' + data.time;
     document.getElementById('review-service').textContent = data.service;
     document.getElementById('review-chair').textContent =
-      'Chair ' + data.chair + ' (' + (data.chair === 1 ? 'Dr. Mora' : 'Dr. Silva') + ')';
+      'Chair ' + data.chair + ' (' + getDentistName(data.chair) + ')';
   }
 
-  function findPatient(name) {
-    if (window.DentalStorage && typeof window.DentalStorage.findPatientByName === 'function') {
-      return window.DentalStorage.findPatientByName(name);
-    }
+  function normalizeName(name) {
+    return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
 
-    var patients = window.DentalStorage.getPatients();
-    var target = name.trim().replace(/\s+/g, ' ').toLowerCase();
-    for (var i = 0; i < patients.length; i++) {
-      var patientName = ((patients[i].firstName || '') + ' ' + (patients[i].lastName || ''))
-        .trim().replace(/\s+/g, ' ').toLowerCase();
-      if (patientName === target) return patients[i];
-    }
-    return null;
+  function findPatient(data) {
+    if (!window.DentalStorage || typeof window.DentalStorage.findPatientByContact !== 'function') return null;
+    return window.DentalStorage.findPatientByContact(data);
   }
 
   function savePatient(data) {
     var date = new Date(data.date + 'T12:00:00');
     var isToday = data.date === localDateKey(new Date());
-    var dentist = data.chair === 1 ? 'Dr. Mora' : 'Dr. Silva';
+    var dentist = getDentistName(data.chair);
     var visitDate = isToday
       ? 'Today, ' + data.time
       : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' + data.time;
@@ -367,8 +460,13 @@
     if (data.portalAccountEmail) updates.portalEmail = data.portalAccountEmail;
     if (data.portalAccountPassword) updates.portalPassword = data.portalAccountPassword;
 
-    var existing = findPatient(data.name);
-    if (existing) return window.DentalStorage.updatePatient(existing.id, updates);
+    var existing = findPatient(data);
+    if (existing) {
+      if (normalizeName(existing.firstName + ' ' + existing.lastName) !== normalizeName(data.name)) {
+        throw new Error('This email address is already associated with a different patient.');
+      }
+      return window.DentalStorage.updatePatient(existing.id, updates);
+    }
 
     var now = new Date();
     return window.DentalStorage.addPatient(Object.assign({
@@ -391,24 +489,50 @@
       renderAvailableSlots();
       throw new Error('That appointment was just booked. Please choose another available time.');
     }
-    if (window.DentalStorage.hasPatientAtTime(schedule, data.name, data.time)) {
+    var existingPatient = findPatient(data);
+    var emailOwner = window.DentalStorage.findPatientByEmail(data.email);
+    if (window.DentalStorage.hasPatientEmail(data.email) &&
+        (!emailOwner || !existingPatient || String(emailOwner.id) !== String(existingPatient.id))) {
+      throw new Error('This email address is already associated with another patient.');
+    }
+    if (existingPatient &&
+        normalizeName(existingPatient.firstName + ' ' + existingPatient.lastName) !== normalizeName(data.name)) {
+      throw new Error('This email address is already associated with a different patient.');
+    }
+    if (window.DentalStorage.hasPatientAtTime(schedule, {
+      id: existingPatient && existingPatient.id,
+      name: data.name,
+      email: data.email,
+      phone: data.phone
+    }, data.time)) {
       throw new Error('This patient already has an appointment at that time.');
     }
 
+    var previousPatient = existingPatient ? JSON.parse(JSON.stringify(existingPatient)) : null;
     var patient = savePatient(data);
     if (!patient) throw new Error('The patient record could not be saved.');
 
-    window.DentalStorage.setSlotForDate(data.date, data.time, data.chair, {
-      patientId: patient.id,
-      patientName: data.name,
-      service: data.service,
-      status: 'confirmed',
-      statusLabel: 'Confirmed'
-    });
-
-    var savedSlot = getSlot(getSchedule(data.date), data.time, data.chair);
-    if (!savedSlot || savedSlot.patientId !== patient.id) {
-      throw new Error('The appointment could not be saved. Please try again.');
+    try {
+      window.DentalStorage.setSlotForDate(data.date, data.time, data.chair, {
+        patientId: patient.id,
+        patientName: data.name,
+        patientEmail: data.email,
+        patientPhone: data.phone,
+        service: data.service,
+        status: 'confirmed',
+        statusLabel: 'Confirmed'
+      });
+      var savedSlot = getSlot(getSchedule(data.date), data.time, data.chair);
+      if (!savedSlot || String(savedSlot.patientId) !== String(patient.id)) {
+        throw new Error('The appointment could not be saved. Please try again.');
+      }
+    } catch (error) {
+      if (previousPatient) {
+        window.DentalStorage.updatePatient(patient.id, previousPatient);
+      } else if (typeof window.DentalStorage.deletePatient === 'function') {
+        window.DentalStorage.deletePatient(patient.id);
+      }
+      throw error;
     }
   }
 
@@ -584,7 +708,28 @@
       setStatus('That appointment was just booked. Please choose another available time.', 'error');
       return;
     }
-    if (window.DentalStorage.hasPatientAtTime(currentSchedule, data.name, data.time)) {
+    var existingPatient = findPatient(data);
+    var emailOwner = window.DentalStorage.findPatientByEmail(data.email);
+    if (window.DentalStorage.hasPatientEmail(data.email) &&
+        (!emailOwner || !existingPatient || String(emailOwner.id) !== String(existingPatient.id))) {
+      setStatus('This email address is already associated with another patient.', 'error');
+      setStep(1);
+      emailInput.focus();
+      return;
+    }
+    if (existingPatient &&
+        normalizeName(existingPatient.firstName + ' ' + existingPatient.lastName) !== normalizeName(data.name)) {
+      setStatus('This email address is already associated with a different patient.', 'error');
+      setStep(1);
+      emailInput.focus();
+      return;
+    }
+    if (window.DentalStorage.hasPatientAtTime(currentSchedule, {
+      id: existingPatient && existingPatient.id,
+      name: data.name,
+      email: data.email,
+      phone: data.phone
+    }, data.time)) {
       setStep(2);
       setStatus('This patient already has an appointment at that time.', 'error');
       return;
@@ -597,15 +742,27 @@
       saveBooking(data);
       isComplete = true;
       backReviewBtn.hidden = true;
-      var dentist = data.chair === 1 ? 'Dr. Mora' : 'Dr. Silva';
+      if (createdAccountEmail && window.DentalStorage && typeof window.DentalStorage.addNotification === 'function') {
+        window.DentalStorage.addNotification({
+          title: 'Patient portal account created',
+          meta: createdAccountEmail,
+          href: '/patients'
+        });
+      }
+      var dentist = getDentistName(data.chair);
       var dateLabel = formatBookingDate(data.date);
       var baseMsg = 'Appointment booked! Your ' + data.service + ' visit is confirmed for ' +
         dateLabel + ' at ' + data.time + ' (Chair ' + data.chair + ', ' + dentist + ').';
       var accountMsg = createdAccountEmail
         ? ' Your patient portal account (' + createdAccountEmail + ') is ready — sign in anytime using your email and password.'
         : ' We look forward to seeing you.';
-      setStatus(baseMsg + accountMsg, 'ok');
-      submitBtn.textContent = 'Done';
+      if (createdAccountEmail) {
+        closeModal();
+        showBookingSuccess(baseMsg + accountMsg);
+      } else {
+        setStatus(baseMsg + accountMsg, 'ok');
+        submitBtn.textContent = 'Done';
+      }
     } catch (error) {
       console.error('Could not complete appointment booking:', error);
       setStatus(error.message || 'The appointment could not be booked. Please try again.', 'error');
@@ -620,7 +777,8 @@
     event.preventDefault();
     if (!accountForm.reportValidity()) return;
 
-    var emailVal = String(accountEmailInput.value || '').trim();
+    var emailVal = String(accountEmailInput.value || '').trim().toLowerCase();
+    accountEmailInput.value = emailVal;
     var passwordInputEl = document.getElementById('account-password');
     var passwordVal = passwordInputEl ? String(passwordInputEl.value || '') : '';
     if (emailVal && emailInput && !emailInput.value.trim()) {
@@ -629,13 +787,6 @@
     var reviewEmailEl = document.getElementById('review-email');
     if (reviewEmailEl && emailVal) {
       reviewEmailEl.textContent = emailVal;
-    }
-    if (window.DentalStorage && typeof window.DentalStorage.addNotification === 'function') {
-      window.DentalStorage.addNotification({
-        title: 'Patient portal account created',
-        meta: emailVal,
-        href: '/patients'
-      });
     }
     closeAccountModal();
     completeBooking(emailVal, passwordVal);

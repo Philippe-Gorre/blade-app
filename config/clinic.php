@@ -35,16 +35,13 @@ return [
     ],
 
     'time_slots' => [
-        '9:00 am', '10:00 am', '11:00 am', '12:00 pm',
-        '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm',
+        '8:00 am', '9:00 am', '10:00 am', '11:00 am', '12:00 pm',
+        '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm', '5:00 pm',
     ],
 
     'days' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 
-    'chairs' => [
-        ['id' => 1, 'name' => 'Chair 1', 'dentist' => 'Dr. Mora'],
-        ['id' => 2, 'name' => 'Chair 2', 'dentist' => 'Dr. Silva'],
-    ],
+    'chairs' => [],
 
     'statuses' => [
         'confirmed'  => 'Confirmed',
@@ -54,9 +51,6 @@ return [
         'emergency'  => 'Emergency',
         'completed'  => 'Completed',
     ],
-
-    // Statuses allowed when booking an open slot from the dashboard (order matters).
-    'booking_statuses' => ['confirmed', 'emergency', 'checked-in'],
 
     'hours' => [
         'Monday to Friday' => env('CLINIC_HOURS_WEEKDAY', '[YOUR HOURS]'),

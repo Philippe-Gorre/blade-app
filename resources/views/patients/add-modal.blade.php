@@ -24,7 +24,7 @@
       <div class="modal__row">
         <div class="modal__field">
           <label for="ap-phone">Phone number</label>
-          <input class="modal__input" id="ap-phone" type="tel" autocomplete="tel" placeholder="+63 912 345 6789" maxlength="11" required>
+          <input class="modal__input" id="ap-phone" type="tel" autocomplete="tel" placeholder="+63 912 345 6789" maxlength="20" required>
         </div>
         <div class="modal__field">
           <label for="ap-email">Email</label>
@@ -45,37 +45,39 @@
         <div class="modal__field">
           <label for="ap-dentist">Dentist</label>
           <select class="modal__input" id="ap-dentist">
-            @foreach (collect(config('clinic.chairs'))->pluck('dentist') as $dentist)
+            @forelse (collect($clinicChairs ?? [])->pluck('dentist') as $dentist)
               <option>{{ $dentist }}</option>
-            @endforeach
+            @empty
+              <option value="" disabled selected>No doctors registered</option>
+            @endforelse
           </select>
-        </div>
-      </div>
-
-      <div class="modal__field">
-        <span class="modal__label">Preferred day</span>
-        <div class="modal__chips" id="ap-day-chips">
-          @foreach (config('clinic.days') as $day)
-            <button class="modal__chip" type="button" aria-pressed="{{ $day === 'Tue' ? 'true' : 'false' }}">{{ $day }}</button>
-          @endforeach
         </div>
       </div>
 
       <div class="modal__row">
         <div class="modal__field">
-          <label for="ap-time">Preferred time</label>
+          <label for="ap-date">Preferred date</label>
+          <input class="modal__input" id="ap-date" type="date" required>
+        </div>
+        <div class="modal__field">
+          <label for="ap-time">Appointment time</label>
           <select class="modal__input" id="ap-time">
             @foreach (config('clinic.time_slots') as $slot)
               <option>{{ $slot }}</option>
             @endforeach
           </select>
         </div>
+      </div>
+
+      <div class="modal__row">
         <div class="modal__field">
           <label for="ap-chair">Chair</label>
           <select class="modal__input" id="ap-chair">
-            @foreach (config('clinic.chairs') as $chair)
+            @forelse ($clinicChairs ?? [] as $chair)
               <option>{{ $chair['name'] }}</option>
-            @endforeach
+            @empty
+              <option value="" disabled selected>No doctors registered</option>
+            @endforelse
           </select>
         </div>
       </div>

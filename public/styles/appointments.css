@@ -213,9 +213,13 @@ button.appointment-cell:hover { border-color: var(--violet); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .modal-head h2 { font: 700 22px/1.2 var(--display); }
 .modal-close { width: 36px; height: 36px; border: 1.5px solid var(--line); border-radius: 50%; background: var(--white); color: var(--muted); font-size: 22px; cursor: pointer; }
+.appointment-slot-summary { margin: -8px 0 16px; padding: 10px 12px; border-radius: 12px; background: var(--tint); color: var(--muted); font-size: 14px; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { font-size: 14px; font-weight: 600; }
+#manage-status-field[hidden],
+#save-status[hidden] { display: none; }
 .input { width: 100%; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--line); border-radius: 11px; background: var(--white); color: var(--ink); }
+textarea.input { min-height: 96px; padding: 10px 12px; resize: vertical; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-error { margin: 0 0 12px; color: var(--red); font-size: 14px; }
 .modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }

@@ -23,6 +23,39 @@
       <a class="doctor-link" href="{{ route('dashboard', ['workspace' => 'doctor']) }}">View today’s schedule</a>
     </header>
 
+    <section class="doctor-panel" aria-labelledby="lunch-title">
+      <div class="doctor-panel__head">
+        <div>
+          <h2 id="lunch-title">Lunch break</h2>
+          <p class="doctor-muted">Block a time slot on today’s schedule (8:00 am – 5:00 pm). This displays on the Dashboard and prevents bookings during your lunch.</p>
+        </div>
+      </div>
+      <form id="lunch-form" class="doctor-lunch-form" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px;">
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600;">
+          Doctor / Chair
+          <select id="lunch-chair" class="modal__input" style="min-width: 200px;">
+            @forelse ($clinicChairs ?? [] as $chair)
+              <option value="{{ $chair['id'] }}" @selected(isset($currentStaff) && $currentStaff['id'] === $chair['doctorId'])>
+                {{ $chair['name'] }} – {{ $chair['dentist'] }}
+              </option>
+            @empty
+              <option value="" disabled selected>No doctors registered</option>
+            @endforelse
+          </select>
+        </label>
+        <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600;">
+          Lunch time
+          <select id="lunch-time" class="modal__input" style="min-width: 150px;">
+            @foreach (config('clinic.time_slots', []) as $slot)
+              <option value="{{ $slot }}" @selected($slot === '12:00 pm')>{{ $slot }}</option>
+            @endforeach
+          </select>
+        </label>
+        <button class="doctor-button" type="submit" id="take-lunch-btn">Take lunch break</button>
+      </form>
+      <div class="doctor-list" id="lunch-list"></div>
+    </section>
+
     <section class="doctor-panel" aria-labelledby="ready-title">
       <div class="doctor-panel__head">
         <div>
@@ -49,7 +82,7 @@
       <div class="doctor-panel__head">
         <div>
           <h2 id="completed-title">Completed today</h2>
-          <p class="doctor-muted">Finished appointments and recorded payments.</p>
+          <p class="doctor-muted">Enter each treatment amount here to send it to the front desk for collection.</p>
         </div>
         <span class="doctor-count" id="completed-count">0</span>
       </div>

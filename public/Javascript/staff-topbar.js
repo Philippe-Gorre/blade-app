@@ -120,4 +120,22 @@
   });
 
   renderNotifications();
+
+  // Auto-logout stale tabs if another tab logs in or logs out
+  document.querySelectorAll('.topbar__logout').forEach(function (logoutBtn) {
+    var form = logoutBtn.closest('form');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+      try {
+        localStorage.setItem('dental_auth_logout', String(Date.now()));
+      } catch (e) { /* ignore */ }
+    });
+  });
+
+  window.addEventListener('storage', function (event) {
+    if (event.key === 'dental_auth_session_marker' || event.key === 'dental_auth_logout') {
+      var isAdmin = window.location.pathname.indexOf('/admin') === 0;
+      window.location.href = isAdmin ? '/admin/login' : '/patient-portal';
+    }
+  });
 })();

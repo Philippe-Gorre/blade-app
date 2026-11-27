@@ -48,12 +48,20 @@
     toastTimer = setTimeout(function () { toast.hidden = true; }, 3500);
   }
 
+  function getChairsList() {
+    return (window.DentalStorage && typeof window.DentalStorage.getChairs === 'function')
+      ? window.DentalStorage.getChairs()
+      : [];
+  }
+
   function getRecords() {
+    var chairs = getChairsList();
     var schedule = window.DentalStorage.getScheduleForDate(localDateKey(new Date()));
     var records = [];
     schedule.forEach(function (row) {
-      [1, 2].forEach(function (chair) {
-        var slot = chair === 1 ? row.chair1 : row.chair2;
+      chairs.forEach(function (chairObj) {
+        var chair = chairObj.id;
+        var slot = row['chair' + chair] || null;
         if (slot && slot.patientName) {
           records.push({
             date: localDateKey(new Date()),
@@ -71,6 +79,7 @@
     if (slot.patientId && typeof window.DentalStorage.getPatientById === 'function') {
       var linked = window.DentalStorage.getPatientById(slot.patientId);
       if (linked) return linked;
+      return null;
     }
     if (typeof window.DentalStorage.findPatientByName === 'function') {
       return window.DentalStorage.findPatientByName(slot.patientName);
@@ -80,9 +89,10 @@
 
   function getLiveSlot(record) {
     var schedule = window.DentalStorage.getScheduleForDate(record.date);
+    var key = 'chair' + Number(record.chair);
     for (var i = 0; i < schedule.length; i++) {
       if (String(schedule[i].time).toLowerCase().trim() === String(record.time).toLowerCase().trim()) {
-        return record.chair === 1 ? schedule[i].chair1 : schedule[i].chair2;
+        return schedule[i][key] || null;
       }
     }
     return null;
@@ -122,7 +132,10 @@
 
   function appointmentMeta(record) {
     var dateLabel = record.date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return dateLabel + ' · ' + record.time + ' · Chair ' + record.chair + (record.chair === 1 ? ' (Dr. Mora)' : ' (Dr. Silva)');
+    var dentist = window.DentalStorage && typeof window.DentalStorage.getDentistName === 'function'
+      ? window.DentalStorage.getDentistName(record.chair)
+      : ('Doctor ' + record.chair);
+    return dateLabel + ' · ' + record.time + ' · Chair ' + record.chair + ' (' + dentist + ')';
   }
 
   function emptyMessage(container, text) {
@@ -175,13 +188,6 @@
       appointment.appendChild(startButton);
       readyListEl.appendChild(appointment);
     });
-  }
-
-  function updateSessionSummary(session, element, paymentInput, treatmentName) {
-    var payment = paymentInput ? paymentInput.value : session.paymentAmount;
-    var paymentSummary = payment ? 'Payment ' + Number(payment).toFixed(2) : 'No payment amount yet';
-    element.textContent = 'Main treatment: ' + treatmentName + ' · ' +
-      (session.xrays || []).length + ' X-rays attached · ' + paymentSummary;
   }
 
   function renderXrays(record, session, list, uploadInput, message) {
@@ -275,7 +281,11 @@
     identity.appendChild(makeElement('span', 'doctor-avatar', initials));
     var identityText = makeElement('div');
     identityText.appendChild(makeElement('h3', '', fullName(patient)));
+    var treatmentPlan = slot.treatmentPlan ||
+      window.DentalStorage.getServiceTreatmentPlan(slot.service || 'Appointment');
     identityText.appendChild(makeElement('p', '', (slot.service || 'Appointment') + ' · ' + appointmentMeta(record)));
+    identityText.appendChild(makeElement('p', '', 'Treatment session ' +
+      (Number(treatmentPlan.sessionNumber) || 1) + ' of ' + (Number(treatmentPlan.totalSessions) || 1)));
     identityText.appendChild(makeElement('p', '', 'Session started ' + displayStartedAt(session.startedAt)));
     identity.appendChild(identityText);
     toolbar.appendChild(identity);
@@ -344,41 +354,118 @@
     main.appendChild(xray);
 
     completion.appendChild(makeElement('h3', '', 'Complete session'));
-    completion.appendChild(makeElement('p', '', 'Add the treatment payment amount before completing.'));
-    var paymentField = makeElement('div', 'doctor-payment-field');
-    var paymentLabel = makeElement('label', '', 'Payment amount');
-    var paymentInput = document.createElement('input');
-    paymentInput.type = 'number';
-    paymentInput.min = '0.01';
-    paymentInput.step = '0.01';
-    paymentInput.placeholder = '0.00';
-    paymentInput.value = session.paymentAmount || '';
-    paymentInput.required = true;
-    paymentInput.setAttribute('aria-label', 'Payment amount');
-    paymentField.appendChild(paymentLabel);
-    paymentField.appendChild(paymentInput);
-    completion.appendChild(paymentField);
-    var summary = makeElement('p', 'doctor-session__summary');
-    completion.appendChild(summary);
+    var hasFollowUp = (Number(treatmentPlan.sessionNumber) || 1) < (Number(treatmentPlan.totalSessions) || 1);
+    completion.appendChild(makeElement('p', '', hasFollowUp
+      ? 'Enter the gap to the next session. The follow-up will keep this chair and time; if that date is occupied, the next available date will be used.'
+      : 'Finish the treatment, then enter its final price in Completed today to send it to the front desk.'));
     var completeButton = makeElement('button', 'doctor-button', 'Complete session');
     completeButton.type = 'button';
     var error = makeElement('p', 'doctor-session__error');
     error.hidden = true;
     completion.appendChild(completeButton);
     completion.appendChild(error);
-    paymentInput.addEventListener('input', function () {
-      updateSessionSummary(session, summary, paymentInput, treatmentName);
-    });
+    var followUpForm = null;
+    if (hasFollowUp) {
+      followUpForm = makeElement('form', 'doctor-follow-up-form');
+      followUpForm.hidden = true;
+      var gapField = makeElement('label', 'doctor-payment-field');
+      gapField.appendChild(makeElement('span', '', 'Gap before the next session'));
+      var gapInput = document.createElement('input');
+      gapInput.type = 'number';
+      gapInput.min = '1';
+      gapInput.max = '365';
+      gapInput.step = '1';
+      gapInput.required = true;
+      gapInput.value = String(Number(treatmentPlan.gapValue) || 4);
+      gapInput.setAttribute('aria-label', 'Gap amount');
+      gapField.appendChild(gapInput);
+      var unitSelect = document.createElement('select');
+      unitSelect.className = 'doctor-follow-up-form__unit';
+      unitSelect.setAttribute('aria-label', 'Gap unit');
+      [
+        { value: 'days', label: 'Days' },
+        { value: 'weeks', label: 'Weeks' },
+        { value: 'months', label: 'Months' }
+      ].forEach(function (unit) {
+        var option = document.createElement('option');
+        option.value = unit.value;
+        option.textContent = unit.label;
+        option.selected = treatmentPlan.gapUnit === unit.value;
+        unitSelect.appendChild(option);
+      });
+      var confirmFollowUp = makeElement('button', 'doctor-button', 'Complete & book next session');
+      confirmFollowUp.type = 'submit';
+      var cancelFollowUp = makeElement('button', 'doctor-button doctor-button--secondary', 'Cancel');
+      cancelFollowUp.type = 'button';
+      followUpForm.appendChild(gapField);
+      followUpForm.appendChild(unitSelect);
+      followUpForm.appendChild(confirmFollowUp);
+      followUpForm.appendChild(cancelFollowUp);
+      completion.appendChild(followUpForm);
+      cancelFollowUp.addEventListener('click', function () {
+        followUpForm.hidden = true;
+        completeButton.hidden = false;
+        error.hidden = true;
+      });
+      followUpForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (!followUpForm.reportValidity()) return;
+        error.hidden = true;
+        var current = getLiveSlot(record);
+        if (!current || current.status !== 'in-session') {
+          error.textContent = 'This session is no longer active.';
+          error.hidden = false;
+          return;
+        }
+        try {
+          var booking = window.DentalStorage.bookFollowUpSession(record, Number(gapInput.value), unitSelect.value);
+          current = getLiveSlot(record);
+          if (!current || current.status !== 'in-session') {
+            throw new Error('The active session changed before it could be completed.');
+          }
+          var completedSession = ensureSession(current, record);
+          completedSession.completedAt = new Date().toISOString();
+          current.session = completedSession;
+          current.status = 'completed';
+          current.statusLabel = 'Completed';
+          current.treatmentPlan = Object.assign({}, current.treatmentPlan || treatmentPlan, {
+            gapValue: Number(gapInput.value),
+            gapUnit: unitSelect.value
+          });
+          current.followUpAppointment = {
+            date: booking.date,
+            time: record.time,
+            chair: record.chair
+          };
+          saveSlot(record, current);
+          var savedCurrent = getLiveSlot(record);
+          if (!savedCurrent || savedCurrent.status !== 'completed') {
+            throw new Error('The follow-up was booked, but this session could not be marked complete. Please contact the front desk.');
+          }
+          updatePatientStatus(current, 'completed', 'Completed', {
+            lastVisit: 'Today, ' + record.time,
+            lastVisitSummary: current.service || 'Dental appointment'
+          });
+          var moved = booking.date !== booking.requestedDate
+            ? ' The requested date was occupied, so it was moved to ' + booking.date + '.'
+            : '';
+          showToast('Next session booked for ' + booking.date + ' at ' + record.time + '.' + moved);
+          renderAll();
+        } catch (bookingError) {
+          error.textContent = bookingError.message || 'The next session could not be booked.';
+          error.hidden = false;
+        }
+      });
+    }
+
     completeButton.addEventListener('click', function () {
-      var amount = Number(paymentInput.value);
-      if (!paymentInput.value || !isFinite(amount) || amount <= 0) {
-        paymentInput.setAttribute('aria-invalid', 'true');
-        error.textContent = 'Enter a payment amount greater than zero to complete the session.';
-        error.hidden = false;
-        paymentInput.focus();
+      if (hasFollowUp) {
+        completeButton.hidden = true;
+        followUpForm.hidden = false;
+        error.hidden = true;
+        gapInput.focus();
         return;
       }
-
       var current = getLiveSlot(record);
       if (!current || current.status !== 'in-session') {
         error.textContent = 'This session is no longer active.';
@@ -386,7 +473,6 @@
         return;
       }
       var completedSession = ensureSession(current, record);
-      completedSession.paymentAmount = amount.toFixed(2);
       completedSession.completedAt = new Date().toISOString();
       current.session = completedSession;
       current.status = 'completed';
@@ -396,21 +482,10 @@
         lastVisit: 'Today, ' + record.time,
         lastVisitSummary: current.service || 'Dental appointment'
       });
-      if (window.DentalStorage && typeof window.DentalStorage.addInvoice === 'function') {
-        window.DentalStorage.addInvoice({
-          patientId: current.patientId || null,
-          patientName: current.patientName,
-          service: current.service || 'Dental treatment',
-          amount: amount,
-          status: 'Paid',
-          method: 'Cash'
-        });
-      }
-      showToast('Session completed, payment recorded, and invoice saved to Billing.');
+      showToast('Session completed. Enter the final payment amount under Completed today.');
       renderAll();
     });
 
-    updateSessionSummary(session, summary, paymentInput, treatmentName);
     renderXrays(record, session, xrayList, uploadInput, uploadMessage);
     card.appendChild(main);
     card.appendChild(completion);
@@ -457,10 +532,165 @@
         (record.slot.service || 'Appointment') + ' · Chair ' + record.chair));
       row.appendChild(details);
       row.appendChild(makeElement('span', 'doctor-badge', 'Completed'));
-      row.appendChild(makeElement('span', 'doctor-completed-payment',
-        'Payment ' + Number(record.slot.session.paymentAmount || 0).toFixed(2)));
+      var session = record.slot.session;
+      if (session.paymentAmount) {
+        var handoffLabel = session.paymentInvoiceId ? 'Sent to front desk' : 'Payment already recorded';
+        row.appendChild(makeElement('span', 'doctor-completed-payment',
+          handoffLabel + ' · ' + Number(session.paymentAmount).toFixed(2)));
+      } else {
+        var handoffForm = makeElement('form', 'doctor-payment-handoff');
+        var paymentField = makeElement('label', 'doctor-payment-field');
+        paymentField.appendChild(makeElement('span', '', 'Payment amount'));
+        var paymentInput = document.createElement('input');
+        paymentInput.type = 'number';
+        paymentInput.min = '0.01';
+        paymentInput.step = '0.01';
+        paymentInput.placeholder = '0.00';
+        paymentInput.required = true;
+        paymentInput.setAttribute('aria-label', 'Payment amount for ' + (patient ? fullName(patient) : record.slot.patientName));
+        paymentField.appendChild(paymentInput);
+        handoffForm.appendChild(paymentField);
+        var sendButton = makeElement('button', 'doctor-button doctor-payment-handoff__button', 'Send to front desk');
+        sendButton.type = 'submit';
+        handoffForm.appendChild(sendButton);
+        var handoffError = makeElement('p', 'doctor-session__error');
+        handoffError.hidden = true;
+        handoffForm.appendChild(handoffError);
+        handoffForm.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var amount = Number(paymentInput.value);
+          if (!paymentInput.value || !isFinite(amount) || amount <= 0) {
+            paymentInput.setAttribute('aria-invalid', 'true');
+            handoffError.textContent = 'Enter a payment amount greater than zero.';
+            handoffError.hidden = false;
+            paymentInput.focus();
+            return;
+          }
+          if (!window.DentalStorage || typeof window.DentalStorage.addInvoice !== 'function') {
+            handoffError.textContent = 'Payment handoff is unavailable. Try again later.';
+            handoffError.hidden = false;
+            return;
+          }
+          var current = getLiveSlot(record);
+          if (!current || current.status !== 'completed' || !current.session) {
+            handoffError.textContent = 'This completed session could not be found.';
+            handoffError.hidden = false;
+            return;
+          }
+          var currentSession = ensureSession(current, record);
+          if (currentSession.paymentAmount || currentSession.paymentInvoiceId) {
+            renderAll();
+            return;
+          }
+          try {
+            var invoice = window.DentalStorage.addInvoice({
+              patientId: current.patientId || null,
+              patientName: current.patientName,
+              service: current.service || 'Dental treatment',
+              amount: amount,
+              status: 'Due'
+            });
+            currentSession.paymentAmount = amount.toFixed(2);
+            currentSession.paymentInvoiceId = invoice.id;
+            currentSession.paymentSentAt = new Date().toISOString();
+            current.session = currentSession;
+            saveSlot(record, current);
+            if (typeof window.DentalStorage.addNotification === 'function') {
+              window.DentalStorage.addNotification({
+                title: 'Payment ready for collection',
+                meta: current.patientName + ' · ' + (current.service || 'Dental treatment') +
+                  ' · ' + amount.toFixed(2),
+                href: '/billing'
+              });
+            }
+            showToast('Payment amount sent to the front desk for collection.');
+            renderAll();
+          } catch (submissionError) {
+            handoffError.textContent = submissionError.message || 'The payment amount could not be sent.';
+            handoffError.hidden = false;
+          }
+        });
+        row.appendChild(handoffForm);
+      }
       completedSessionsEl.appendChild(row);
     });
+  }
+
+  function renderLunchBreaks() {
+    var lunchListEl = document.getElementById('lunch-list');
+    var lunchForm = document.getElementById('lunch-form');
+    var lunchChairEl = document.getElementById('lunch-chair');
+    var lunchTimeEl = document.getElementById('lunch-time');
+    if (!lunchListEl) return;
+
+    var chairs = getChairsList();
+    var takeBtn = document.getElementById('take-lunch-btn');
+    if (takeBtn) takeBtn.disabled = chairs.length === 0;
+    if (chairs.length === 0) {
+      emptyMessage(lunchListEl, 'No doctors registered yet.');
+      return;
+    }
+
+    var todayKey = localDateKey(new Date());
+    var schedule = window.DentalStorage.getScheduleForDate(todayKey);
+    var breaks = [];
+    schedule.forEach(function (row) {
+      chairs.forEach(function (chairObj) {
+        var slot = row['chair' + chairObj.id];
+        if (slot && slot.type === 'break') {
+          breaks.push({ time: row.time, chair: chairObj.id, dentist: chairObj.dentist, slot: slot });
+        }
+      });
+    });
+
+    if (breaks.length === 0) {
+      emptyMessage(lunchListEl, 'No lunch breaks scheduled today.');
+    } else {
+      lunchListEl.textContent = '';
+      breaks.forEach(function (item) {
+        var row = makeElement('article', 'doctor-appointment');
+        var details = makeElement('div');
+        details.appendChild(makeElement('p', 'doctor-appointment__time', item.time));
+        details.appendChild(makeElement('h3', 'doctor-appointment__name', item.dentist));
+        details.appendChild(makeElement('p', 'doctor-appointment__meta', 'Chair ' + item.chair + ' · Lunch break'));
+        row.appendChild(details);
+        row.appendChild(makeElement('span', 'doctor-badge', 'Lunch break'));
+        var cancelBtn = makeElement('button', 'doctor-button doctor-button--secondary', 'Cancel lunch');
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', function () {
+          window.DentalStorage.clearLunchBreak(todayKey, item.time, item.chair);
+          renderAll();
+          showToast('Lunch break removed for ' + item.dentist + ' at ' + item.time + '.');
+        });
+        row.appendChild(cancelBtn);
+        lunchListEl.appendChild(row);
+      });
+    }
+
+    if (lunchForm && !lunchForm.dataset.bound) {
+      lunchForm.dataset.bound = '1';
+      lunchForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var chairVal = lunchChairEl ? Number(lunchChairEl.value) : 0;
+        var timeVal = lunchTimeEl ? lunchTimeEl.value : '';
+        if (!chairVal || !timeVal) return;
+        try {
+          var dentist = window.DentalStorage.getDentistName(chairVal);
+          window.DentalStorage.setLunchBreak(todayKey, timeVal, chairVal, dentist);
+          if (typeof window.DentalStorage.addNotification === 'function') {
+            window.DentalStorage.addNotification({
+              title: dentist + ' scheduled a lunch break',
+              meta: 'Today at ' + timeVal + ' · Chair ' + chairVal,
+              href: '/dashboard'
+            });
+          }
+          renderAll();
+          showToast('Lunch break set for ' + dentist + ' at ' + timeVal + '.');
+        } catch (err) {
+          showToast(err.message || 'Could not schedule lunch break.');
+        }
+      });
+    }
   }
 
   function renderAll() {
@@ -472,6 +702,7 @@
       year: 'numeric'
     });
     var records = getRecords();
+    renderLunchBreaks();
     renderReady(records);
     renderActive(records);
     renderCompleted(records);

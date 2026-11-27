@@ -189,6 +189,16 @@ a:focus-visible, button:focus-visible {
 .reschedule-panel[hidden] {
   display: none;
 }
+.reschedule-error {
+  padding: 10px 12px;
+  border: 1px solid var(--red);
+  border-radius: 10px;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 600;
+}
+.reschedule-error[hidden] { display: none; }
 
 /* ---------- Dashboard Modals ---------- */
 .modal-overlay {

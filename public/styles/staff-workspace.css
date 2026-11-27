@@ -126,6 +126,17 @@
   grid-template-columns: minmax(0, 1.3fr) minmax(300px, .9fr);
 }
 
+.billing-list-stack {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.invoice-list-title {
+  margin: 8px 10px 0;
+  font-size: 17px;
+}
+
 .invoice-list-card {
   overflow: hidden;
   padding: 6px 9px 10px;
@@ -171,6 +182,12 @@
 .invoice-row:hover,
 .invoice-row.is-selected {
   background: #f5f0ff;
+}
+
+.invoice-empty {
+  padding: 14px 10px;
+  color: #716987;
+  font-size: 13px;
 }
 
 .invoice-number {
@@ -420,7 +437,7 @@
 .recall-table-head,
 .recall-row {
   display: grid;
-  grid-template-columns: minmax(85px, 1.2fr) minmax(50px, .72fr) minmax(55px, .75fr) 68px;
+  grid-template-columns: minmax(115px, 1.4fr) minmax(72px, .8fr) minmax(100px, .95fr) 116px;
   align-items: center;
   gap: 8px;
 }
@@ -442,6 +459,20 @@
 
 .recall-row:last-child {
   border-bottom: 0;
+}
+
+.recall-empty {
+  padding: 18px 10px;
+  color: #716987;
+  font-size: 13px;
+}
+
+.recall-row > span {
+  min-width: 0;
+}
+
+.recall-table-head span:last-child {
+  text-align: center;
 }
 
 .recall-person strong,
@@ -468,8 +499,14 @@
 }
 
 .recall-send {
+  width: 100%;
   min-height: 36px;
   padding: 0 11px;
+}
+
+.recall-actions {
+  display: flex;
+  align-items: center;
 }
 
 .recall-aside {
@@ -542,6 +579,16 @@
 .recall-message-card > p {
   color: #716987;
   font-size: 13px;
+}
+
+.recall-channel-label {
+  width: fit-content;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #e8ddff;
+  color: #482b98;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .recall-message-card textarea {
@@ -702,7 +749,7 @@
 
   .recall-table-head,
   .recall-row {
-    min-width: 390px;
+    min-width: 500px;
   }
 
   .bar-chart {

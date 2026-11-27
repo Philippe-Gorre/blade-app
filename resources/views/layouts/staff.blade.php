@@ -34,7 +34,13 @@
     </section>
   </div>
 
+  <script>
+    window.CLINIC_CHAIRS = @json($clinicChairs ?? []);
+    window.CLINIC_TIMES = @json(config('clinic.time_slots', []));
+    window.CLINIC_CURRENT_STAFF = @json($currentStaff ?? null);
+  </script>
   <script src="{{ asset('Javascript/storage.js') }}" defer></script>
+  <script src="{{ asset('Javascript/custom-services.js') }}" defer></script>
   <script src="{{ asset('Javascript/staff-topbar.js') }}" defer></script>
   <script src="{{ asset('Javascript/xray-preview.js') }}" defer></script>
   @stack('scripts')

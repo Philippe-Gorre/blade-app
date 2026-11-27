@@ -35,9 +35,10 @@
         </div>
         <div class="modal__field">
           <label for="reschedule-slot-time">New time</label>
-          <select class="modal__input" id="reschedule-slot-time">
+          <select class="modal__input" id="reschedule-slot-time" required>
+            <option value="">Choose an available time</option>
             @foreach (config('clinic.time_slots') as $slot)
-              <option>{{ $slot }}</option>
+              <option value="{{ $slot }}">{{ $slot }}</option>
             @endforeach
           </select>
         </div>
@@ -45,11 +46,14 @@
       <div class="modal__field">
         <label for="reschedule-slot-chair">Chair</label>
         <select class="modal__input" id="reschedule-slot-chair">
-          @foreach (config('clinic.chairs') as $chair)
+          @forelse ($clinicChairs ?? [] as $chair)
             <option value="{{ $chair['id'] }}">{{ $chair['name'] }} – {{ $chair['dentist'] }}</option>
-          @endforeach
+          @empty
+            <option value="" disabled selected>No doctors registered</option>
+          @endforelse
         </select>
       </div>
+      <p class="reschedule-error" id="reschedule-error" role="alert" aria-live="assertive" hidden></p>
       <div class="modal__actions">
         <button class="btn btn--primary" type="submit">Save new time</button>
         <button class="btn btn--outline" type="button" id="btn-cancel-reschedule">Back</button>

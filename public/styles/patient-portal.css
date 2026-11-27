@@ -113,15 +113,6 @@
   font-weight: 700;
 }
 
-.portal-preview-link {
-  display: inline-block;
-  margin-top: 12px;
-  color: var(--violet);
-  font-size: 14px;
-  font-weight: 700;
-  text-underline-offset: 3px;
-}
-
 @media (max-width: 760px) {
   .portal {
     min-height: 0;

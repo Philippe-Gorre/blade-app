@@ -1,4 +1,4 @@
-<div class="wrap hero-inner">
+                  <div class="wrap hero-inner">
   <div class="hero-copy">
     <h1>Gentle dental care, explained as we go.</h1>
     <p class="hero-lead">Check-ups, fillings, whitening and emergency visits for adults and children. Your first appointment starts with a conversation, not a drill.</p>
@@ -49,11 +49,11 @@
             </div>
             <div class="field">
               <label for="pt-phone">Cellphone number</label>
-              <input class="input" id="pt-phone" type="tel" autocomplete="tel" maxlength="20" required>
+              <input class="input" id="pt-phone" type="tel" inputmode="numeric" autocomplete="tel" minlength="11" maxlength="11" pattern="[0-9]{11}" required>
             </div>
             <div class="field">
-              <label for="pt-email">Email <span>(optional)</span></label>
-              <input class="input" id="pt-email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com">
+              <label for="pt-email">Gmail address</label>
+              <input class="input" id="pt-email" type="email" autocomplete="email" maxlength="254" placeholder="you@gmail.com" pattern=".+@[Gg][Mm][Aa][Ii][Ll][.]com" required>
             </div>
           </div>
           <div class="booking-actions">
@@ -82,9 +82,13 @@
             </div>
           </div>
           <fieldset class="group booking-availability" aria-describedby="pt-availability-message">
-            <legend class="group-label">Available times and chairs</legend>
+            <legend class="group-label">Choose a doctor and chair</legend>
             <p class="availability-message" id="pt-availability-message" aria-live="polite"></p>
-            <div class="available-slots" id="pt-available-slots" role="group" aria-label="Available appointment slots"></div>
+            <div class="available-slots" id="pt-chair-options" role="group" aria-label="Available doctors and chairs"></div>
+            <div class="booking-time-options" id="pt-time-options" hidden>
+              <h4>2. Choose an available time</h4>
+              <div class="available-slots" id="pt-available-slots" role="group" aria-label="Available appointment times"></div>
+            </div>
           </fieldset>
           <div class="booking-actions">
             <button class="btn btn-outline" data-booking-back type="button">Back</button>
@@ -148,10 +152,11 @@
             id="account-email"
             name="email"
             type="email"
+            maxlength="254"
             autocomplete="email"
             inputmode="email"
             placeholder="you@gmail.com"
-            pattern=".+@gmail[.]com"
+            pattern=".+@[Gg][Mm][Aa][Ii][Ll][.]com"
             required
           >
         </div>
@@ -163,6 +168,7 @@
             name="password"
             type="password"
             autocomplete="new-password"
+            maxlength="128"
             minlength="8"
             required
           >
@@ -176,4 +182,5 @@
       </form>
     </section>
   </div>
+  <p class="booking-success-toast" id="booking-success-toast" role="status" aria-live="polite" hidden></p>
 </div>

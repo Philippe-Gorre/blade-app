@@ -199,7 +199,7 @@ body.doctor-session-maximized { overflow: hidden; }
 .doctor-session__complete h3 { margin-bottom: 6px; font: 700 20px/1.2 var(--display); }
 .doctor-session__complete > p { margin-bottom: 18px; color: var(--muted); font-size: 14px; }
 .doctor-payment-field { display: flex; flex-direction: column; gap: 7px; }
-.doctor-payment-field label { font-size: 14px; font-weight: 700; }
+.doctor-payment-field > span { font-size: 14px; font-weight: 700; }
 .doctor-payment-field input {
   width: 100%;
   min-height: 54px;
@@ -209,18 +209,41 @@ body.doctor-session-maximized { overflow: hidden; }
   color: var(--ink);
   font: 700 24px var(--body);
 }
-.doctor-session__summary {
-  margin: 14px 0;
-  padding: 14px;
-  border-radius: 14px;
-  background: var(--tint);
-  color: var(--muted);
-  font-size: 13px;
-}
 .doctor-session__complete .doctor-button { width: 100%; }
+.doctor-follow-up-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, .7fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+.doctor-follow-up-form .doctor-payment-field { grid-column: 1 / -1; }
+.doctor-follow-up-form .doctor-payment-field input,
+.doctor-follow-up-form__unit {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+}
+.doctor-follow-up-form .doctor-button { grid-column: 1 / -1; }
+.doctor-follow-up-form[hidden] { display: none; }
 .doctor-session__error { margin-top: 10px; color: var(--red); font-size: 13px; }
 .doctor-session__error[hidden] { display: none; }
 .doctor-completed-payment { color: var(--muted); font-weight: 700; }
+.doctor-payment-handoff {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 260px;
+}
+.doctor-payment-handoff .doctor-payment-field { gap: 5px; }
+.doctor-payment-handoff .doctor-payment-field input { min-height: 42px; }
+.doctor-payment-handoff__button { min-height: 42px; padding: 0 14px; white-space: nowrap; }
+.doctor-payment-handoff .doctor-session__error { grid-column: 1 / -1; margin: 0; }
 
 .doctor-modal-overlay {
   position: fixed;
@@ -282,6 +305,7 @@ body.doctor-session-maximized { overflow: hidden; }
   .doctor-session.is-maximized { inset: 8px; padding: 10px; gap: 12px; }
   .doctor-appointment { grid-template-columns: minmax(0, 1fr) auto; }
   .doctor-appointment__button { grid-column: 1 / -1; width: 100%; }
+  .doctor-payment-handoff { grid-column: 1 / -1; min-width: 0; }
   .doctor-facts { grid-template-columns: minmax(0, 1fr); }
   .doctor-modal__actions { flex-direction: column-reverse; }
   .doctor-modal__actions .doctor-button { width: 100%; }

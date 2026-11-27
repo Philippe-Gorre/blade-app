@@ -42,11 +42,12 @@
     }
 
     var latestPatients = getStoredPatients();
-    var targetName = normalizePatientName(fullName(patientData));
-    var duplicate = latestPatients.some(function (patient) {
-      return normalizePatientName(fullName(patient)) === targetName;
+    var targetEmail = String(patientData.email || '').trim().toLowerCase();
+    var duplicate = targetEmail && latestPatients.some(function (patient) {
+      return String(patient.email || '').trim().toLowerCase() === targetEmail ||
+        String(patient.portalEmail || '').trim().toLowerCase() === targetEmail;
     });
-    if (duplicate) throw new Error('A patient with this name already exists.');
+    if (duplicate) throw new Error('This email address is already used by another patient.');
 
     var id = patientData.id || Date.now();
     var newPatient = Object.assign({}, patientData, { id: id });
@@ -57,6 +58,11 @@
   }
 
   function updatePatientRecord(id, updates) {
+    if (window.DentalStorage && typeof window.DentalStorage.updatePatient === 'function') {
+      var updatedPatient = window.DentalStorage.updatePatient(id, updates);
+      patients = window.DentalStorage.getPatients();
+      return updatedPatient;
+    }
     for (var i = 0; i < patients.length; i++) {
       if (patients[i].id === id || String(patients[i].id) === String(id)) {
         Object.assign(patients[i], updates);
@@ -120,17 +126,56 @@
     return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
   }
 
+  function getNextVisit(patient) {
+    if (window.DentalStorage && typeof window.DentalStorage.getPatientAppointments === 'function') {
+      var appointments = window.DentalStorage.getPatientAppointments(patient).upcoming || [];
+      if (!appointments.length) return { text: 'None scheduled', detail: '', appointment: null };
+
+      var appointment = appointments[0];
+      var today = new Date();
+      var todayKey = today.getFullYear() + '-' +
+        String(today.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today.getDate()).padStart(2, '0');
+      var dateParts = appointment.date.split('-');
+      var visitDate = new Date(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2]));
+      var dateText = appointment.date === todayKey
+        ? 'Today'
+        : visitDate.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+
+      return {
+        text: dateText + ', ' + appointment.time,
+        detail: (appointment.service || 'Dental care') + ' with ' + appointment.dentist +
+          ', Chair ' + appointment.chair,
+        appointment: appointment
+      };
+    }
+
+    return {
+      text: patient.nextVisit || 'None scheduled',
+      detail: patient.nextVisitDetail || '',
+      appointment: null
+    };
+  }
+
   function getPatientXrays(patient) {
     if (!window.DentalStorage || typeof window.DentalStorage.getSchedule !== 'function') return [];
 
     var patientName = normalizePatientName(fullName(patient));
+    var uniqueNameMatch = window.DentalStorage.findPatientByName(patientName);
+    var canMatchLegacyName = uniqueNameMatch &&
+      String(uniqueNameMatch.id) === String(patient.id);
     var attachments = [];
     window.DentalStorage.getSchedule().forEach(function (row) {
       [row.chair1, row.chair2].forEach(function (slot) {
         if (!slot || !slot.session || !Array.isArray(slot.session.xrays)) return;
-        var matchesPatient = (slot.patientId !== undefined &&
-          String(slot.patientId) === String(patient.id)) ||
-          normalizePatientName(slot.patientName) === patientName;
+        var matchesPatient = slot.patientId !== undefined && slot.patientId !== null
+          ? String(slot.patientId) === String(patient.id)
+          : canMatchLegacyName && normalizePatientName(slot.patientName) === patientName;
         if (matchesPatient) {
           attachments = attachments.concat(slot.session.xrays);
         }
@@ -292,18 +337,7 @@
       tr.appendChild(el('td', '', p.lastVisit || 'None yet'));
 
       // Next visit
-      var nextVisitText = p.nextVisit;
-      if ((!nextVisitText || nextVisitText === 'None scheduled') && window.DentalStorage && typeof window.DentalStorage.getPatientAppointments === 'function') {
-        var appts = window.DentalStorage.getPatientAppointments(p);
-        if (appts.upcoming && appts.upcoming.length > 0) {
-          nextVisitText = appts.upcoming[0].date + ', ' + appts.upcoming[0].time;
-        }
-      }
-      if (nextVisitText && nextVisitText.indexOf('Today') === 0) {
-        var todayFormatted = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        nextVisitText = nextVisitText.replace('Today', todayFormatted);
-      }
-      tr.appendChild(el('td', '', nextVisitText || 'None scheduled'));
+      tr.appendChild(el('td', '', getNextVisit(p).text));
 
       // Status
       var td4 = el('td');
@@ -369,22 +403,12 @@
     var body = el('div', 'detail-body');
 
     // Next visit box
-    var panelNextVisit = p.nextVisit;
-    if ((!panelNextVisit || panelNextVisit === 'None scheduled') && window.DentalStorage && typeof window.DentalStorage.getPatientAppointments === 'function') {
-      var panelAppts = window.DentalStorage.getPatientAppointments(p);
-      if (panelAppts.upcoming && panelAppts.upcoming.length > 0) {
-        panelNextVisit = panelAppts.upcoming[0].date + ', ' + panelAppts.upcoming[0].time;
-      }
-    }
-    if (panelNextVisit && panelNextVisit.indexOf('Today') === 0) {
-      var panelTodayStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-      panelNextVisit = panelNextVisit.replace('Today', panelTodayStr);
-    }
+    var nextVisit = getNextVisit(p);
     var nvBox = el('div', 'next-visit-box');
     nvBox.appendChild(el('div', 'next-visit-box__label', 'Next visit'));
-    nvBox.appendChild(el('div', 'next-visit-box__time', panelNextVisit || 'No upcoming visit'));
-    if (p.nextVisitDetail) {
-      nvBox.appendChild(el('div', 'next-visit-box__detail', p.nextVisitDetail));
+    nvBox.appendChild(el('div', 'next-visit-box__time', nextVisit.text));
+    if (nextVisit.detail) {
+      nvBox.appendChild(el('div', 'next-visit-box__detail', nextVisit.detail));
     }
     var nvActions = el('div', 'next-visit-box__actions');
     var startBtn = el('button', 'btn btn--green', 'Start visit');
@@ -402,22 +426,31 @@
         visitingToday: true
       });
       if (window.DentalStorage && typeof window.DentalStorage.syncPatientCheckIn === 'function') {
-        window.DentalStorage.syncPatientCheckIn(fullName(p));
+        window.DentalStorage.syncPatientCheckIn(p.id);
       }
       showToast('Visit started for ' + fullName(p));
       render();
     });
     nvActions.appendChild(startBtn);
 
-    var reschedBtn = el('button', 'btn btn--outline', 'Reschedule');
-    reschedBtn.type = 'button';
-    reschedBtn.style.minHeight = '40px';
-    reschedBtn.style.padding = '0 20px';
-    reschedBtn.style.fontSize = '14px';
-    reschedBtn.addEventListener('click', function () {
-      window.location.href = '/appointments?patient=' + encodeURIComponent(fullName(p));
-    });
-    nvActions.appendChild(reschedBtn);
+    if (nextVisit.appointment) {
+      var reschedBtn = el('button', 'btn btn--outline', 'Reschedule');
+      reschedBtn.type = 'button';
+      reschedBtn.style.minHeight = '40px';
+      reschedBtn.style.padding = '0 20px';
+      reschedBtn.style.fontSize = '14px';
+      reschedBtn.addEventListener('click', function () {
+        var params = new URLSearchParams({
+          rescheduleDate: nextVisit.appointment.date,
+          rescheduleTime: nextVisit.appointment.time,
+          rescheduleChair: String(nextVisit.appointment.chair),
+          reschedulePatientId: String(p.id),
+          reschedulePatientName: fullName(p)
+        });
+        window.location.href = '/appointments?' + params.toString();
+      });
+      nvActions.appendChild(reschedBtn);
+    }
     nvBox.appendChild(nvActions);
     body.appendChild(nvBox);
 
@@ -434,6 +467,46 @@
       grid.appendChild(el('dd', '', pair[1]));
     });
     body.appendChild(grid);
+
+    var recallSection = el('section', 'patient-recall');
+    recallSection.appendChild(el('h3', 'detail-section-title', 'Recall reminder'));
+    var recallForm = document.createElement('form');
+    var recallLabel = el('label', '', 'Recall due date');
+    var recallDateInput = document.createElement('input');
+    recallDateInput.type = 'date';
+    recallDateInput.className = 'note-box';
+    recallDateInput.value = p.recallDueDate || '';
+    recallLabel.appendChild(recallDateInput);
+    recallForm.appendChild(recallLabel);
+    var recallSave = el('button', 'btn btn--outline', 'Save recall date');
+    recallSave.type = 'submit';
+    recallForm.appendChild(recallSave);
+    var recallError = el('p', 'form-error');
+    recallError.hidden = true;
+    recallForm.appendChild(recallError);
+    recallForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (recallDateInput.value) {
+        var dateParts = recallDateInput.value.split('-').map(Number);
+        var dueDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+        if (isNaN(dueDate.getTime()) || dueDate.getFullYear() !== dateParts[0] ||
+            dueDate.getMonth() !== dateParts[1] - 1 || dueDate.getDate() !== dateParts[2]) {
+          recallError.textContent = 'Choose a valid recall date.';
+          recallError.hidden = false;
+          return;
+        }
+      }
+      try {
+        updatePatientRecord(p.id, { recallDueDate: recallDateInput.value });
+        showToast(recallDateInput.value ? 'Recall date saved.' : 'Recall date cleared.');
+        render();
+      } catch (error) {
+        recallError.textContent = error.message || 'The recall date could not be saved.';
+        recallError.hidden = false;
+      }
+    });
+    recallSection.appendChild(recallForm);
+    body.appendChild(recallSection);
 
     // Visit history
     if (p.history && p.history.length > 0) {
@@ -524,10 +597,22 @@
   var cancelBtnModal = document.getElementById('modal-cancel-btn');
   var addForm = document.getElementById('add-patient-form');
   var errorEl = document.getElementById('ap-error');
-  var dayChips = document.querySelectorAll('#ap-day-chips .modal__chip');
+  var preferredDateInput = document.getElementById('ap-date');
+
+  function localDateKey(date) {
+    return date.getFullYear() + '-' +
+      String(date.getMonth() + 1).padStart(2, '0') + '-' +
+      String(date.getDate()).padStart(2, '0');
+  }
 
   function openModal() {
     if (!overlayEl) return;
+    if (preferredDateInput) {
+      var today = new Date();
+      preferredDateInput.min = localDateKey(today);
+      today.setDate(today.getDate() + 1);
+      preferredDateInput.value = localDateKey(today);
+    }
     overlayEl.hidden = false;
     document.body.classList.add('modal-open');
     setTimeout(function () {
@@ -542,9 +627,6 @@
     document.body.classList.remove('modal-open');
     if (addForm) addForm.reset();
     if (errorEl) errorEl.hidden = true;
-    dayChips.forEach(function (c, i) {
-      c.setAttribute('aria-pressed', i === 1 ? 'true' : 'false');
-    });
     if (addForm) {
       addForm.querySelectorAll('.is-invalid').forEach(function (inp) {
         inp.classList.remove('is-invalid');
@@ -575,19 +657,6 @@
     }
   });
 
-  dayChips.forEach(function (chip) {
-    chip.addEventListener('click', function () {
-      dayChips.forEach(function (c) {
-        c.setAttribute('aria-pressed', c === chip ? 'true' : 'false');
-      });
-    });
-  });
-
-  function getSelectedDay() {
-    var picked = document.querySelector('#ap-day-chips .modal__chip[aria-pressed="true"]');
-    return picked ? picked.textContent.trim() : 'Tue';
-  }
-
   if (addForm) {
     addForm.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -598,10 +667,10 @@
       var fname = fnameInp ? fnameInp.value.trim().replace(/\s+/g, ' ') : '';
       var lname = lnameInp ? lnameInp.value.trim().replace(/\s+/g, ' ') : '';
       var phone = phoneInp ? phoneInp.value.trim() : '';
-      var email = emailInp ? emailInp.value.trim() : '';
+      var email = emailInp ? emailInp.value.trim().toLowerCase() : '';
       var service = document.getElementById('ap-service') ? document.getElementById('ap-service').value : 'Check-up and cleaning';
       var dentist = document.getElementById('ap-dentist') ? document.getElementById('ap-dentist').value : 'Dr. Mora';
-      var day = getSelectedDay();
+      var preferredDate = preferredDateInput ? preferredDateInput.value : '';
       var time = document.getElementById('ap-time') ? document.getElementById('ap-time').value : '9:00 am';
       var chair = document.getElementById('ap-chair') ? document.getElementById('ap-chair').value : 'Chair 1';
       var note = document.getElementById('ap-note') ? document.getElementById('ap-note').value.trim() : '';
@@ -610,6 +679,23 @@
         inp.classList.remove('is-invalid');
       });
       if (errorEl) errorEl.hidden = true;
+
+      var now = new Date();
+      var todayKey = localDateKey(now);
+      var appointmentDate = new Date(preferredDate + 'T00:00:00');
+      var validPreferredDate = preferredDate &&
+        !isNaN(appointmentDate.getTime()) &&
+        localDateKey(appointmentDate) === preferredDate &&
+        preferredDate >= todayKey;
+      if (!validPreferredDate) {
+        if (preferredDateInput) preferredDateInput.classList.add('is-invalid');
+        if (errorEl) {
+          errorEl.textContent = 'Choose today or a future appointment date.';
+          errorEl.hidden = false;
+        }
+        if (preferredDateInput) preferredDateInput.focus();
+        return;
+      }
 
       if (!fname || fname.length > 80) {
         if (fnameInp) fnameInp.classList.add('is-invalid');
@@ -647,13 +733,21 @@
         if (emailInp) emailInp.focus();
         return;
       }
-      if (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(day) < 0 ||
-          ['9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm'].indexOf(time) < 0 ||
+      if (email && window.DentalStorage.hasPatientEmail(email)) {
+        if (emailInp) emailInp.classList.add('is-invalid');
+        if (errorEl) {
+          errorEl.textContent = 'This email address is already used by another patient.';
+          errorEl.hidden = false;
+        }
+        if (emailInp) emailInp.focus();
+        return;
+      }
+      if (['9:00 am', '10:00 am', '11:00 am', '12:00 pm', '1:00 pm', '2:00 pm', '3:00 pm', '4:00 pm'].indexOf(time) < 0 ||
           ['Dr. Mora', 'Dr. Silva'].indexOf(dentist) < 0 ||
           ['Chair 1', 'Chair 2'].indexOf(chair) < 0 ||
           !service) {
         if (errorEl) {
-          errorEl.textContent = 'Choose a valid day, time, chair, dentist, and service.';
+          errorEl.textContent = 'Choose a valid date, time, chair, dentist, and service.';
           errorEl.hidden = false;
         }
         return;
@@ -667,29 +761,10 @@
         return;
       }
 
-      if (window.DentalStorage.findPatientByName(fname + ' ' + lname)) {
-        if (errorEl) {
-          errorEl.textContent = 'A patient with this name already exists. Use the existing patient record.';
-          errorEl.hidden = false;
-        }
-        if (fnameInp) fnameInp.focus();
-        return;
-      }
-
-      var now = new Date();
       var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
       var sinceStr = monthNames[now.getMonth()] + ' ' + now.getFullYear();
-      var weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      var appointmentWeekday = weekdays.findIndex(function (weekday) {
-        return weekday.toLowerCase() === day.toLowerCase();
-      });
-      if (appointmentWeekday < 0) appointmentWeekday = (now.getDay() + 1) % 7;
-      var dayOffset = (appointmentWeekday - now.getDay() + 7) % 7;
-      var appointmentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
-      var isToday = dayOffset === 0;
-      var appointmentDateKey = appointmentDate.getFullYear() + '-' +
-        String(appointmentDate.getMonth() + 1).padStart(2, '0') + '-' +
-        String(appointmentDate.getDate()).padStart(2, '0');
+      var isToday = preferredDate === todayKey;
+      var appointmentDateKey = preferredDate;
       var chairNum = chair.indexOf('2') >= 0 ? 2 : 1;
       var schedule = [];
       if (window.DentalStorage && typeof window.DentalStorage.getScheduleForDate === 'function') {
@@ -722,7 +797,14 @@
         return;
       }
 
-      var nextVisitStr = isToday ? 'Today, ' + time : day + ', ' + time;
+      var nextVisitStr = isToday
+        ? 'Today, ' + time
+        : appointmentDate.toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }) + ', ' + time;
       var detailStr = service + ' with ' + dentist + ', ' + chair;
 
       var newPatient = {
@@ -735,6 +817,7 @@
         statusLabel: 'Confirmed',
         phone: phone || '',
         email: email || '',
+        portalEmail: '',
         dentist: dentist,
         patientSince: sinceStr,
         isNew: true,
@@ -753,22 +836,37 @@
         }
         return;
       }
-      if (window.DentalStorage && typeof window.DentalStorage.setSlotForDate === 'function') {
-        window.DentalStorage.setSlotForDate(appointmentDateKey, time, chairNum, {
-          patientId: saved.id,
-          patientName: fullName(saved),
-          service: service,
-          status: 'confirmed',
-          statusLabel: 'Confirmed'
-        });
-      } else if (isToday && window.DentalStorage && typeof window.DentalStorage.setSlot === 'function') {
-        window.DentalStorage.setSlot(time, chairNum, {
-          patientId: saved.id,
-          patientName: fullName(saved),
-          service: service,
-          status: 'confirmed',
-          statusLabel: 'Confirmed'
-        });
+      try {
+        if (window.DentalStorage && typeof window.DentalStorage.setSlotForDate === 'function') {
+          window.DentalStorage.setSlotForDate(appointmentDateKey, time, chairNum, {
+            patientId: saved.id,
+            patientName: fullName(saved),
+            patientEmail: saved.email || '',
+            patientPhone: saved.phone || '',
+            service: service,
+            status: 'confirmed',
+            statusLabel: 'Confirmed'
+          });
+        } else if (isToday && window.DentalStorage && typeof window.DentalStorage.setSlot === 'function') {
+          window.DentalStorage.setSlot(time, chairNum, {
+            patientId: saved.id,
+            patientName: fullName(saved),
+            patientEmail: saved.email || '',
+            patientPhone: saved.phone || '',
+            service: service,
+            status: 'confirmed',
+            statusLabel: 'Confirmed'
+          });
+        }
+      } catch (error) {
+        if (typeof window.DentalStorage.deletePatient === 'function') {
+          window.DentalStorage.deletePatient(saved.id);
+        }
+        if (errorEl) {
+          errorEl.textContent = error.message || 'The appointment could not be saved.';
+          errorEl.hidden = false;
+        }
+        return;
       }
       state.selectedId = saved.id;
       closeModal();
@@ -777,7 +875,7 @@
     });
   }
 
-  ['ap-fname', 'ap-lname', 'ap-phone', 'ap-email'].forEach(function (id) {
+  ['ap-fname', 'ap-lname', 'ap-phone', 'ap-email', 'ap-date'].forEach(function (id) {
     var inp = document.getElementById(id);
     if (inp) {
       inp.addEventListener('input', function () {

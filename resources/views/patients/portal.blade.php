@@ -7,7 +7,7 @@
 @endpush
 
 @push('scripts')
-  <script src="{{ asset('Javascript/patient-portal.js') }}" defer></script>
+  <script src="{{ asset('Javascript/patient-portal.js') }}?v={{ filemtime(public_path('Javascript/patient-portal.js')) }}" defer></script>
 @endpush
 
 @section('content')
@@ -26,9 +26,9 @@
           <span>{{ config('app.name') }}</span>
         </div>
         <h2>Welcome back</h2>
-        <p class="portal-card__copy">Enter the email address and password associated with your patient account.</p>
+        <p class="portal-card__copy">Patients, staff, and administrators can sign in with their account email and password.</p>
 
-        <form id="patient-portal-login" class="portal-form">
+        <form id="patient-portal-login" class="portal-form" data-auth-url="{{ route('patient-portal.login') }}">
           <div class="field">
             <label for="portal-email">Email address</label>
             <input
@@ -60,7 +60,6 @@
         </form>
 
         <p class="portal-card__note">Need help? <a href="{{ route('home') }}#visit">Contact the clinic</a>.</p>
-        <a class="portal-preview-link" href="{{ route('patient-portal.preview') }}">Preview the patient portal layout</a>
       </div>
     </div>
   </section>
